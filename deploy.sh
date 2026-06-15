@@ -15,7 +15,7 @@ echo "Git pulling latest changes..."
 git pull origin master
 
 echo "📦 Building and starting containers..."
-docker compose -f docker-compose.yml up -d --build
+docker compose -f docker-compose.yml up -d
 
 echo "🧹 Cleaning up docker..."
 docker system prune -a -f
