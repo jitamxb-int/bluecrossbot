@@ -14,7 +14,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bluecross_backend
-    env_file: .env
+    env_file: backend/.env
     environment:
       # Override so the backend reaches Qdrant over the compose network.
       QDRANT_URL: http://qdrant:6333
