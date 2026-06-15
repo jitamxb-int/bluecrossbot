@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile
     container_name: bluecross_backend
     env_file: backend/.env
-    environment:
       # Override so the backend reaches Qdrant over the compose network.
     ports:
       - "4020:4020"
