@@ -11,14 +11,3 @@ services:
       - "4020:4020"
     volumes:
       - ./logs:/app/logs
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    # restart: unless-stopped
