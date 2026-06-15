@@ -19,7 +19,7 @@ from src.core.config import Settings, get_settings
 from src.services.ingestion.service import IngestionService, UploadedDocument
 from src.utils.text import decode_bytes
 
-router = APIRouter(tags=["ingestion"])
+router = APIRouter(tags=["Ingestion"])
 
 _ALLOWED_SUFFIX = ".txt"
 

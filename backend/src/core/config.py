@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     # --- Application ---
-    app_name: str = "RAG Backend"
+    app_name: str = "Blue Cross RAG Backend"
     environment: str = "dev"  # dev | prod
     host: str = "0.0.0.0"
     port: int = 8000

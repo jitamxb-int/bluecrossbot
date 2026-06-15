@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from src.api.models.common import HealthResponse, ReadinessResponse
 from src.core.config import Settings, get_settings
 
-router = APIRouter(tags=["health"])
+router = APIRouter(tags=["Health"])
 
 
 @router.get("/health", response_model=HealthResponse, summary="Liveness probe")

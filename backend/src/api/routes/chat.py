@@ -14,7 +14,7 @@ from src.api.models.chat import ChatRequest, ChatResponse
 from src.api.models.common import ErrorResponse
 from src.services.chat.service import ChatService
 
-router = APIRouter(tags=["chat"])
+router = APIRouter(tags=["Chat"])
 
 
 @router.post(

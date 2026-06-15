@@ -8,7 +8,7 @@ from src.api.dependencies import get_retrieval_service
 from src.api.models.retrieval import RetrieveRequest, RetrieveResponse
 from src.services.retrieval.service import RetrievalService
 
-router = APIRouter(tags=["retrieval"])
+router = APIRouter(tags=["Retrieval"])
 
 
 @router.post(
