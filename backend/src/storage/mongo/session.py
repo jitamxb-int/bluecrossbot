@@ -61,12 +61,17 @@ class ChatSession(Document):
 class SessionRepository:
     """All reads/writes of session memory go through this small repository."""
 
-    async def get_history(self, session_id: str) -> tuple[list[dict], str | None]:
-        """Load ``(chat_json, conversation_summary)``; ``([], None)`` if unknown."""
+    async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
+        """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.
+
+        ``found`` is the authoritative existence signal for the session — a session
+        always has >=1 turn once created, so this single ``find_one`` distinguishes a
+        real session from an unrecognised id without any extra round-trip.
+        """
         session = await ChatSession.find_one(ChatSession.session_id == session_id)
         if session:
-            return session.chat_json, session.conversation_summary
-        return [], None
+            return True, session.chat_json, session.conversation_summary
+        return False, [], None
 
     async def append_turn(
         self,

@@ -67,8 +67,14 @@ class ChatService:
         session_id = request.session_id or uuid.uuid4().hex
         top_k = request.top_k or self._settings.chat_retrieval_top_k
 
-        # 1. LOAD
-        chat_history, summary = await self._sessions.get_history(session_id)
+        # 1. LOAD. An unrecognised id (e.g. a stale one from the frontend) is treated
+        #    as a brand-new conversation: mint a fresh id and start clean. The frontend
+        #    replaces its stale id with the one echoed back in the response.
+        found, chat_history, summary = await self._sessions.get_history(session_id)
+        if request.session_id and not found:
+            logger.info("chat_session_replaced", stale_session_id=session_id)
+            session_id = uuid.uuid4().hex
+            chat_history, summary = [], None
 
         # 2. Rewrite for retrieval only (raw query is what we store/show).
         standalone = await self._llm.rewrite_standalone(request.message, summary, chat_history)
