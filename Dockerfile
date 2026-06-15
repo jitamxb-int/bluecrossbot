@@ -12,7 +12,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Copy only dependency manifests first so this layer is cached across code changes.
-COPY pyproject.toml uv.lock ./
+COPY /backend/pyproject.toml /backend/uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
