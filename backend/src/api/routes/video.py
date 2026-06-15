@@ -17,7 +17,7 @@ from src.services.ingestion.service import UploadedDocument
 from src.services.ingestion.video_service import VideoIngestionService
 from src.utils.text import decode_bytes
 
-router = APIRouter(tags=["ingestion"])
+router = APIRouter(tags=["Ingestion - Video"])
 
 _ALLOWED_SUFFIX = ".txt"
 
