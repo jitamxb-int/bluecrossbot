@@ -1,7 +1,7 @@
 services:
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: rag_qdrant
+    container_name: bluecross_qdrant
     ports:
       - "6333:6333"   # REST + dashboard
       - "6334:6334"   # gRPC
@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rag_backend
+    container_name: bluecross_backend
     env_file: .env
     environment:
       # Override so the backend reaches Qdrant over the compose network.
