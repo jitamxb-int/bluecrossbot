@@ -1,0 +1,29 @@
+# Virtual envs / caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# VCS
+.git/
+.gitignore
+
+# Secrets & local data
+.env
+.env.*
+!.env.example
+logs/*
+qdrant_storage/
+
+# Docs / tests not needed in the runtime image
+README.md
+tests/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

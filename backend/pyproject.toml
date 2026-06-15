@@ -1,0 +1,64 @@
+[project]
+name = "rag-backend"
+version = "0.1.0"
+description = "Production-ready RAG platform backend — document ingestion, chunking, embedding, and Qdrant vector storage."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "Blue Cross Labs" }]
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2.13.0",
+    "pydantic-settings",
+    "qdrant-client",
+    "openai>=2.41.0",
+    "langchain-text-splitters",
+    "structlog",
+    "python-multipart",
+    "httpx",
+    "charset-normalizer",
+    "beanie",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "anyio",
+    "ruff>=0.8.0",
+]
+
+# This project is an application (flat layout with server.py at the root),
+# not a distributable package — tell uv not to attempt a build/install of it.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+# FastAPI's Depends/File/Form/etc. are intentionally called in argument
+# defaults — that is the framework's idiomatic pattern, not a B008 bug.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Cookie",
+    "fastapi.Security",
+]
