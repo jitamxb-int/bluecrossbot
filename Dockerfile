@@ -36,8 +36,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
 # Application code.
-COPY server.py server_run.py ./
-COPY src ./src
+COPY backend/server.py backend/server_run.py ./
+COPY backend/src ./src
 
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 USER appuser
