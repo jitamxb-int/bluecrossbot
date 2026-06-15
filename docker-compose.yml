@@ -11,7 +11,7 @@ services:
 
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: rag_backend
     env_file: .env
@@ -23,7 +23,7 @@ services:
     ports:
       - "4020:4020"
     volumes:
-      - ./logs:/app/logs
+      - ./backend/logs:/app/logs
     healthcheck:
       test:
         - CMD
