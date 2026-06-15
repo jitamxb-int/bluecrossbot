@@ -12,7 +12,7 @@ if [ ! -f backend/.env ]; then
 fi
 
 echo "Git pulling latest changes..."
-git pull origin main
+git pull origin master
 
 echo "📦 Building and starting containers..."
 docker compose -f backend/docker-compose.yml up -d --build
