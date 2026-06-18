@@ -98,12 +98,21 @@ const VideoCard = ({ video }: { video: Video }) => {
     const clickCountRef = useRef(0);
     const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const extractVideoId = (url: string): string | null => {
-        const match = url.match(/[?&]v=([^&]+)/);
+    const isYouTubeUrl = (url: string): boolean => {
+        return /(?:youtube\.com|youtu\.be)/.test(url);
+    };
+
+    const extractYouTubeId = (url: string): string | null => {
+        const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
         return match ? match[1] : null;
     };
 
-    const videoId = extractVideoId(video.video_url);
+    const isDirectVideo = (url: string): boolean => {
+        return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
+    };
+
+    const youtubeId = isYouTubeUrl(video.video_url) ? extractYouTubeId(video.video_url) : null;
+    const isDirect = isDirectVideo(video.video_url);
 
     const handleClick = () => {
         clickCountRef.current += 1;
@@ -128,7 +137,7 @@ const VideoCard = ({ video }: { video: Video }) => {
         };
     }, []);
 
-    if (isPlaying && videoId) {
+    if (isPlaying) {
         return (
             <div style={{
                 width: '280px',
@@ -138,20 +147,36 @@ const VideoCard = ({ video }: { video: Video }) => {
                 background: '#000',
             }}>
                 <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-                    <iframe
-                        src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            border: 'none',
-                        }}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        title={video.title}
-                    />
+                    {youtubeId ? (
+                        <iframe
+                            src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                border: 'none',
+                            }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title={video.title}
+                        />
+                    ) : (
+                        <video
+                            src={video.video_url}
+                            controls
+                            autoPlay
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                            }}
+                        />
+                    )}
                 </div>
                 <div style={{
                     padding: '8px 10px',
@@ -191,28 +216,61 @@ const VideoCard = ({ video }: { video: Video }) => {
             }}
         >
             <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-                <img
-                    src={video.thumbnail_url}
-                    alt={video.title}
-                    style={{
+                {video.thumbnail_url ? (
+                    <img
+                        src={video.thumbnail_url}
+                        alt={video.title}
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                        }}
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://placehold.co/480x270/EEF3FB/1B3D8F?text=Video';
+                        }}
+                    />
+                ) : (
+                    <div style={{
                         position: 'absolute',
                         top: 0,
                         left: 0,
                         width: '100%',
                         height: '100%',
-                        objectFit: 'cover',
-                    }}
-                    onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://placehold.co/480x270/EEF3FB/1B3D8F?text=Video';
-                    }}
-                />
+                        background: 'linear-gradient(135deg, #EEF3FB 0%, #DDEAFF 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}>
+                        <div style={{
+                            width: '60px',
+                            height: '60px',
+                            borderRadius: '50%',
+                            background: `linear-gradient(135deg, ${BLUE} 0%, ${BLUE_L} 100%)`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}>
+                            <div style={{
+                                width: 0,
+                                height: 0,
+                                borderTop: '12px solid transparent',
+                                borderBottom: '12px solid transparent',
+                                borderLeft: '20px solid white',
+                                marginLeft: '4px',
+                            }} />
+                        </div>
+                    </div>
+                )}
                 <div style={{
                     position: 'absolute',
                     inset: 0,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: 'rgba(0,0,0,0.2)',
+                    background: video.thumbnail_url ? 'rgba(0,0,0,0.2)' : 'transparent',
                 }}>
                     <div style={{
                         width: '48px',
