@@ -9,6 +9,16 @@ const BLUE_X = '#EEF3FB';
 // const API_URL = 'https://nearly-pierre-cord-syndication.trycloudflare.com/api/v1/chat';
 const API_URL = 'http://localhost:8000/api/v1/chat';
 
+interface Video {
+    title: string;
+    video_url: string;
+    thumbnail_url: string;
+    category: string;
+    division: string;
+    page_url: string;
+    score: number;
+}
+
 interface Product {
     product_name: string;
     category: string;
@@ -22,6 +32,7 @@ interface Message {
     role: 'user' | 'bot';
     text: string;
     products?: Product[];
+    videos?: Video[];
     citations?: string;
 }
 
@@ -79,6 +90,160 @@ const ProductCard = ({ products }: { products: Product }) => {
                 {products.product_name}
             </span>
         </a>
+    );
+};
+
+const VideoCard = ({ video }: { video: Video }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const clickCountRef = useRef(0);
+    const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const extractVideoId = (url: string): string | null => {
+        const match = url.match(/[?&]v=([^&]+)/);
+        return match ? match[1] : null;
+    };
+
+    const videoId = extractVideoId(video.video_url);
+
+    const handleClick = () => {
+        clickCountRef.current += 1;
+
+        if (clickCountRef.current === 1) {
+            clickTimerRef.current = setTimeout(() => {
+                if (clickCountRef.current === 1) {
+                    setIsPlaying(true);
+                }
+                clickCountRef.current = 0;
+            }, 250);
+        } else if (clickCountRef.current === 2) {
+            if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+            window.open(video.video_url, '_blank', 'noopener,noreferrer');
+            clickCountRef.current = 0;
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+        };
+    }, []);
+
+    if (isPlaying && videoId) {
+        return (
+            <div style={{
+                width: '280px',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                border: '1px solid #e2e8f0',
+                background: '#000',
+            }}>
+                <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+                    <iframe
+                        src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            border: 'none',
+                        }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title={video.title}
+                    />
+                </div>
+                <div style={{
+                    padding: '8px 10px',
+                    background: '#fff',
+                    borderTop: '1px solid #e2e8f0',
+                }}>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: '#1A2942', lineHeight: '1.3' }}>
+                        {video.title}
+                    </p>
+                    <p style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
+                        {video.category} · {video.division}
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div
+            onClick={handleClick}
+            style={{
+                width: '280px',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                border: '1px solid #e2e8f0',
+                background: '#fff',
+                cursor: 'pointer',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+            }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+            }}
+        >
+            <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+                <img
+                    src={video.thumbnail_url}
+                    alt={video.title}
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                    }}
+                    onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://placehold.co/480x270/EEF3FB/1B3D8F?text=Video';
+                    }}
+                />
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.2)',
+                }}>
+                    <div style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.95)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                    }}>
+                        <div style={{
+                            width: 0,
+                            height: 0,
+                            borderTop: '10px solid transparent',
+                            borderBottom: '10px solid transparent',
+                            borderLeft: `16px solid ${BLUE}`,
+                            marginLeft: '3px',
+                        }} />
+                    </div>
+                </div>
+            </div>
+            <div style={{ padding: '8px 10px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: '#1A2942', lineHeight: '1.3' }}>
+                    {video.title}
+                </p>
+                <p style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px' }}>
+                    {video.category} · {video.division}
+                </p>
+            </div>
+        </div>
     );
 };
 
@@ -249,6 +414,7 @@ function tryRenderCommaProductList(text: string): React.ReactNode | null {
 const MessageBubble = ({ msg }: { msg: Message }) => {
     const isUser = msg.role === 'user';
     const hasProducts = !isUser && !!msg.products && msg.products.length > 0;
+    const hasVideos = !isUser && !!msg.videos && msg.videos.length > 0;
     const hasCitations = !isUser && !!msg.citations && msg.citations.trim().length > 0;
 
     return (
@@ -279,6 +445,14 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
                         {msg.products!.map((p, i) => (
                             <ProductCard key={i} products={p} />
+                        ))}
+                    </div>
+                )}
+
+                {hasVideos && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
+                        {msg.videos!.map((v, i) => (
+                            <VideoCard key={i} video={v} />
                         ))}
                     </div>
                 )}
@@ -368,6 +542,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 role: 'bot',
                 text: data.answer ?? 'Sorry, I could not get a response. Please try again.',
                 products: data.products ?? [],
+                videos: data.videos ?? [],
                 citations: data.citations ?? '',
             }]);
         } catch {
