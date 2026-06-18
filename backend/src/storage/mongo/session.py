@@ -108,16 +108,3 @@ class SessionRepository:
         session.updated_at = now
         await session.save()
         return session
-
-    async def end_session(self, session_id: str) -> ChatSession | None:
-        """Freeze timing and mark the session inactive (explicit close)."""
-        now = _utcnow()
-        session = await ChatSession.find_one(ChatSession.session_id == session_id)
-        if session is None:
-            return None
-        session.ended_at = now
-        session.duration_seconds = (now - _as_aware(session.started_at)).total_seconds()
-        session.is_active = False
-        session.updated_at = now
-        await session.save()
-        return session

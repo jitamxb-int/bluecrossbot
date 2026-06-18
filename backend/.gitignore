@@ -39,6 +39,7 @@ Thumbs.db
 # Qdrant local storage (if ever run outside Docker volume)
 qdrant_storage/
 
-/docs
+# /docs
 /tests
 /CLAUDE.md
+/docs

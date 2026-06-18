@@ -64,7 +64,6 @@ class Settings(BaseSettings):
     # --- Chat ---
     chat_history_window_turns: int = 10
     chat_retrieval_top_k: int = 6
-    session_timeout_seconds: int = 1800
 
     # --- Chunking defaults (overridable per request) ---
     default_chunk_size: int = 600

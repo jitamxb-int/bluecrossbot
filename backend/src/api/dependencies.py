@@ -8,22 +8,12 @@ Singletons constructed during the application lifespan are stored on
 from __future__ import annotations
 
 from fastapi import HTTPException, Request, status
-from qdrant_client import AsyncQdrantClient
 
 from src.services.chat.service import ChatService
 from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
 from src.services.retrieval.service import RetrievalService
-from src.storage.qdrant.repository import QdrantRepository
-
-
-def get_qdrant_client(request: Request) -> AsyncQdrantClient:
-    return request.app.state.qdrant_client
-
-
-def get_repository(request: Request) -> QdrantRepository:
-    return request.app.state.repository
 
 
 def get_ingestion_service(request: Request) -> IngestionService:

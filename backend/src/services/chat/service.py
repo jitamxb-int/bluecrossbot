@@ -47,6 +47,7 @@ _SYSTEM_INSTRUCTIONS = (
     "turn into ONE plain-text string of 100-200 characters (no markdown, no line "
     "breaks, no 'Summary:' prefix). Prioritise the user's primary intent and the "
     "most recent exchange."
+    "for the response which are greetings do not return any citations, product_ids, or video_ids; just respond naturally and keep the conversation flowing."
 )
 
 
@@ -80,18 +81,13 @@ class ChatService:
         standalone = await self._llm.rewrite_standalone(request.message, summary, chat_history)
 
         # 3. Retrieve (blended across doc types).
-        # print(f"[RAG] Standalone Query: {standalone}")
-        # points = await self._retrieval.search(standalone, top_k)
-        # print(f"[RAG] Retrieved {len(points)} points")
-        # print(f"[RAG] Points: {points}")
-        # descriptive, product_map, video_map = _split_by_type(points)
-
         logger.info(f"Standalone query generated: {standalone}")
+
         points = await self._retrieval.search(standalone, top_k)
+
         logger.info(f"Retrieved {len(points)} points from vector search")
         logger.debug(f"Retrieved points: {points}")
         descriptive, product_map, video_map = _split_by_type(points)
-
 
         # 4. Build the prompt.
         messages = self._build_messages(

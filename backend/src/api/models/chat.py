@@ -14,13 +14,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class ChatMessage(BaseModel):
-    """A single turn in the conversation history."""
-
-    role: str = Field(..., description="'user' | 'assistant' | 'system'.")
-    content: str
-
-
 class ChatRequest(BaseModel):
     """RAG chat request."""
 

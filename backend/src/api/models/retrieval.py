@@ -16,8 +16,6 @@ class RetrieveRequest(BaseModel):
         default=None,
         description="Payload equality filters, e.g. {'doc_type': 'product'}.",
     )
-    # TODO: hybrid (dense + sparse) search support.
-    hybrid: bool = Field(default=False, description="Enable hybrid dense+sparse search (TODO).")
 
 
 class RetrievedChunk(BaseModel):

@@ -102,14 +102,6 @@ class QdrantRepository:
             logger.debug("upserted_batch", collection=name, count=len(batch), offset=start)
         return len(points)
 
-    async def collection_exists(self, name: str) -> bool:
-        return await self._client.collection_exists(name)
-
-    async def ping(self) -> bool:
-        """Lightweight connectivity check used by the readiness probe."""
-        await self._client.get_collections()
-        return True
-
     async def search(
         self,
         name: str,
