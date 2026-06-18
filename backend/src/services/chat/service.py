@@ -17,6 +17,7 @@ Implements ``docs/CONVERSATION_HISTORY.md``. Each turn:
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from src.api.models.chat import (
@@ -33,21 +34,67 @@ from src.services.retrieval.service import RetrievalService
 from src.storage.mongo.session import SessionRepository
 
 logger = get_logger(__name__)
-
 _SYSTEM_INSTRUCTIONS = (
-    "You are a helpful assistant for Blue Cross Laboratories. Answer the user's "
-    "question grounded ONLY in the [RETRIEVED CONTEXT]; if the context does not "
-    "contain the answer, say so plainly rather than inventing facts.\n\n"
-    "When products or videos in the context are relevant to the user's need, "
-    "recommend them in your answer and return their tags (e.g. 'P1', 'V2') in "
-    "product_ids / video_ids so the app can attach their images/links. Only "
-    "reference items that genuinely fit; return empty lists otherwise. Never "
-    "invent product names, image URLs, or video URLs.\n\n"
+    # ── ROLE ──────────────────────────────────────────────────────────
+    "You are a helpful assistant for Blue Cross Laboratories.\n\n"
+
+    # ── 1. GROUNDING ──────────────────────────────────────────────────
+    "## GROUNDING\n"
+    "Answer the user's question grounded ONLY in the [RETRIEVED CONTEXT]. "
+    "If the context does not contain the answer, say so plainly rather than "
+    "inventing facts.\n\n"
+
+    # ── 2. STRICT NO-HALLUCINATION RULE (highest priority) ────────────
+    "## NO-HALLUCINATION RULE (HIGHEST PRIORITY)\n"
+    "If the [RETRIEVED CONTEXT] does NOT contain information that answers the "
+    "user's question, you MUST NOT guess, infer, fabricate, or use any outside "
+    "or prior knowledge to construct an answer. Do not partially answer from "
+    "assumptions. Instead, reply with a short, polite message along these lines:\n"
+    "  'I'm sorry, but I don't have the information needed to answer that "
+    "question. If there's something else you'd like to know, please feel free "
+    "to ask.'\n"
+    "You may rephrase this naturally, but the meaning must stay the same: you "
+    "lack the data, you will not invent an answer, and you invite the user to "
+    "ask something else. When you give this no-data response, return empty "
+    "product_ids, video_ids, and source_ids.\n"
+    "This rule overrides any urge to be helpful by filling gaps. An honest "
+    "'I don't have that information' is always correct; a plausible-sounding "
+    "but unsupported answer is never acceptable.\n\n"
+
+    # ── 3. INTERNAL TAGS ──────────────────────────────────────────────
+    "## INTERNAL TAGS\n"
+    "The context is labelled with internal tags: descriptive chunks as [D1], "
+    "[D2], products as [P1], [P2], and videos as [V1], [V2].\n"
+    "TAGS ARE INTERNAL. They go ONLY in the structured fields, NEVER in the "
+    "answer:\n"
+    "- product_ids: the [P#] tags of products you recommend ([] if none).\n"
+    "- video_ids:   the [V#] tags of videos you recommend ([] if none).\n"
+    "- source_ids:  the [D#] tags of the descriptive chunks you actually used "
+    "to ground your answer ([] if you used none).\n"
+    "Only include tags for items that genuinely fit the user's need; otherwise "
+    "return empty lists. Never invent product names, image URLs, or video "
+    "URLs.\n\n"
+
+    # ── 4. ANSWER TEXT FORMATTING ─────────────────────────────────────
+    "## ANSWER TEXT FORMATTING\n"
+    "In the ANSWER TEXT, refer to products and videos by their real NAMES "
+    "(e.g. 'Dolostat Gel'). NEVER write tag tokens such as P1, V2, or D1, and "
+    "never wrap them in brackets or parentheses in the visible answer. The app "
+    "attaches the real images and links separately from the structured id "
+    "fields.\n\n"
+
+    # ── 5. CONVERSATION SUMMARY ───────────────────────────────────────
+    "## CONVERSATION SUMMARY\n"
     "Always produce conversation_summary: merge the previous summary with this "
-    "turn into ONE plain-text string of 100-200 characters (no markdown, no line "
-    "breaks, no 'Summary:' prefix). Prioritise the user's primary intent and the "
-    "most recent exchange."
-    "for the response which are greetings do not return any citations, product_ids, or video_ids; just respond naturally and keep the conversation flowing."
+    "turn into ONE plain-text string of 100-200 characters (no markdown, no "
+    "line breaks, no 'Summary:' prefix). Prioritise the user's primary intent "
+    "and the most recent exchange.\n\n"
+
+    # ── 6. GREETINGS & CHIT-CHAT ──────────────────────────────────────
+    "## GREETINGS & CHIT-CHAT\n"
+    "For greetings or chit-chat, respond naturally and keep the conversation "
+    "flowing: return empty product_ids, video_ids, and source_ids, and do not "
+    "mention any context or tags."
 )
 
 
@@ -87,24 +134,27 @@ class ChatService:
 
         logger.info(f"Retrieved {len(points)} points from vector search")
         logger.debug(f"Retrieved points: {points}")
-        descriptive, product_map, video_map = _split_by_type(points)
+        descriptive_map, product_map, video_map = _split_by_type(points)
 
         # 4. Build the prompt.
         messages = self._build_messages(
-            request.message, chat_history, summary, descriptive, product_map, video_map
+            request.message, chat_history, summary, descriptive_map, product_map, video_map
         )
 
         # 5. LLM call.
         result = await self._llm.complete_structured(messages)
-        answer = result["answer"]
+        # Strip any internal tags the model leaked into the visible answer text.
+        answer = _sanitize_answer(result["answer"])
         new_summary = result["conversation_summary"]
 
         # 6. Resolve chosen tags -> grounded references (real URLs from payloads).
         products = _resolve_products(result["product_ids"], product_map)
         videos = _resolve_videos(result["video_ids"], video_map)
-        # Citations = comma-separated, deduped page URLs the answer is grounded in:
-        # descriptive source_urls + the page_urls of the products/videos actually referenced.
-        citations = _build_sources(descriptive, products, videos)
+        # Citations reflect ACTUAL grounding: only the descriptive chunks the model
+        # cited (source_ids) plus the page_urls of referenced products/videos. For
+        # greetings/chit-chat all id lists are empty, so citations are empty too.
+        source_tags = _normalize_tags(result.get("source_ids", []), "D")
+        citations = _build_sources(descriptive_map, source_tags, products, videos)
 
         # 7. SAVE (raw query + final answer).
         session = await self._sessions.append_turn(
@@ -140,7 +190,7 @@ class ChatService:
         user_query: str,
         chat_history: list[dict],
         summary: str | None,
-        descriptive: list[dict],
+        descriptive_map: dict[str, dict],
         product_map: dict[str, dict],
         video_map: dict[str, dict],
     ) -> list[dict]:
@@ -151,7 +201,7 @@ class ChatService:
         window = self._settings.chat_history_window_turns * 2
         messages.extend((chat_history or [])[-window:])
 
-        context = _format_context(descriptive, product_map, video_map)
+        context = _format_context(descriptive_map, product_map, video_map)
         if context:
             messages.append({"role": "system", "content": f"[RETRIEVED CONTEXT]\n{context}"})
 
@@ -159,9 +209,9 @@ class ChatService:
         return messages
 
 
-def _split_by_type(points: list) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
-    """Split scored points into descriptive payloads + tagged product/video maps."""
-    descriptive: list[dict] = []
+def _split_by_type(points: list) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+    """Split scored points into tagged descriptive/product/video maps (D#/P#/V#)."""
+    descriptive_map: dict[str, dict] = {}
     product_map: dict[str, dict] = {}
     video_map: dict[str, dict] = {}
     for point in points:
@@ -173,18 +223,18 @@ def _split_by_type(points: list) -> tuple[list[dict], dict[str, dict], dict[str,
         elif doc_type == "video":
             video_map[f"V{len(video_map) + 1}"] = payload
         else:
-            descriptive.append(payload)
-    return descriptive, product_map, video_map
+            descriptive_map[f"D{len(descriptive_map) + 1}"] = payload
+    return descriptive_map, product_map, video_map
 
 
 def _format_context(
-    descriptive: list[dict], product_map: dict[str, dict], video_map: dict[str, dict]
+    descriptive_map: dict[str, dict], product_map: dict[str, dict], video_map: dict[str, dict]
 ) -> str:
     blocks: list[str] = []
-    for payload in descriptive:
+    for tag, payload in descriptive_map.items():
         text = (payload.get("text") or "").strip()
         if text:
-            blocks.append(text)
+            blocks.append(f"[{tag}] {text}")
     for tag, p in product_map.items():
         blocks.append(
             f"[{tag}] PRODUCT: {p.get('product_name', '')} "
@@ -243,15 +293,17 @@ def _resolve_videos(ids: list, video_map: dict[str, dict]) -> list[VideoReferenc
 
 
 def _build_sources(
-    descriptive: list[dict],
+    descriptive_map: dict[str, dict],
+    source_tags: set[str],
     products: list[ProductReference],
     videos: list[VideoReference],
 ) -> str:
-    """Comma-separated, deduped page URLs the answer is grounded in.
+    """Comma-separated, deduped page URLs the answer is actually grounded in.
 
-    ``source_url`` for descriptive hits, ``page_url`` for the referenced
-    products/videos. Order preserved (descriptive → products → videos); empty
-    URLs skipped; each page appears once.
+    ``source_url`` only for the descriptive chunks the model cited via
+    ``source_ids``, plus ``page_url`` for the referenced products/videos. Order
+    preserved (descriptive → products → videos); empty URLs skipped; each page
+    appears once. Hallucinated tags not in ``descriptive_map`` are ignored.
     """
     urls: list[str] = []
     seen: set[str] = set()
@@ -261,11 +313,30 @@ def _build_sources(
             seen.add(url)
             urls.append(url)
 
-    for payload in descriptive:
-        add(payload.get("source_url"))
+    for tag, payload in descriptive_map.items():
+        if tag in source_tags:
+            add(payload.get("source_url"))
     for product in products:
         add(product.page_url)
     for video in videos:
         add(video.page_url)
 
     return ", ".join(urls)
+
+
+# Internal context tags (D#/P#/V#) the model occasionally leaks into prose despite
+# the system prompt. Conservative: only bracketed/parenthesised forms and a trailing
+# run of tags are stripped — bare inline tokens are left alone to avoid corrupting
+# legitimate text.
+_TAG = r"[DPV]\d+"
+_BRACKETED_TAG = re.compile(rf"[\[(]\s*{_TAG}(?:\s*[,;]\s*{_TAG})*\s*[\])]")
+_TRAILING_TAGS = re.compile(rf"(?:\s*[\[(]?{_TAG}[\])]?)+\s*$")
+
+
+def _sanitize_answer(answer: str) -> str:
+    """Strip stray internal tag tokens that leaked into the visible answer."""
+    cleaned = _BRACKETED_TAG.sub("", answer)
+    cleaned = _TRAILING_TAGS.sub("", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    return cleaned.strip()

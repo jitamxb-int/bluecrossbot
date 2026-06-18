@@ -51,8 +51,22 @@ _CHAT_RESPONSE_SCHEMA = {
                     "items": {"type": "string"},
                     "description": "Tags (e.g. 'V1') of videos worth referencing; [] if none.",
                 },
+                "source_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Tags (e.g. 'D1') of the descriptive context chunks actually used "
+                        "to ground the answer; [] if none (e.g. greetings/chit-chat)."
+                    ),
+                },
             },
-            "required": ["answer", "conversation_summary", "product_ids", "video_ids"],
+            "required": [
+                "answer",
+                "conversation_summary",
+                "product_ids",
+                "video_ids",
+                "source_ids",
+            ],
         },
     },
 }
@@ -98,6 +112,7 @@ class OpenAIChatProvider:
             "conversation_summary": data.get("conversation_summary"),
             "product_ids": data.get("product_ids", []),
             "video_ids": data.get("video_ids", []),
+            "source_ids": data.get("source_ids", []),
         }
 
     async def rewrite_standalone(
