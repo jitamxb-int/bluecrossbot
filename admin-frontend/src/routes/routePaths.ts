@@ -1,0 +1,13 @@
+export const ROUTES = {
+  DASHBOARD: '/dashboard',
+  SESSIONS: '/sessions',
+  TRANSCRIPT: '/transcript/:sessionId',
+  FEEDBACK_LOGS: '/ai-feedback-log',
+  PRODUCTS: '/products',
+  PRODUCT_INGEST: '/products/ingest',
+  VIDEOS: '/videos',
+  VIDEO_INGEST: '/videos/ingest',
+  CHAT_SESSIONS: '/chat',
+} as const;
+
+export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];

@@ -7,14 +7,76 @@ references with their real image/video URLs from the vector store.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import get_chat_service
-from src.api.models.chat import ChatRequest, ChatResponse
+from src.api.models.chat import (
+    ChatCountResponse,
+    ChatRequest,
+    ChatResponse,
+    ChatSessionListResponse,
+    ChatTranscriptsResponse,
+    SessionSortField,
+    SortOrder,
+)
 from src.api.models.common import ErrorResponse
 from src.services.chat.service import ChatService
 
 router = APIRouter(tags=["Chat"])
+
+
+@router.get(
+    "/sessions",
+    response_model=ChatSessionListResponse,
+    responses={503: {"model": ErrorResponse}},
+    summary="Paginated list of chat sessions.",
+    description=(
+        "Returns chat sessions with optional status filter and sorting. "
+        "Use `status=active` or `status=inactive` to filter; omit for all sessions."
+    ),
+)
+async def list_sessions(
+    limit: int = Query(default=10, ge=1, le=100, description="Max sessions to return."),
+    offset: int = Query(default=0, ge=0, description="Number of sessions to skip."),
+    status: str | None = Query(default=None, description="Filter by status: active | inactive."),
+    sortBy: SessionSortField = Query(default=SessionSortField.id, description="Field to sort by."),
+    sortOrder: SortOrder = Query(default=SortOrder.asc, description="Sort direction: asc | desc."),
+    service: ChatService = Depends(get_chat_service),
+) -> ChatSessionListResponse:
+    return await service.list_sessions(
+        limit=limit,
+        offset=offset,
+        status=status,
+        sort_by=sortBy.value,
+        sort_order=sortOrder.value,
+    )
+
+
+@router.get(
+    "/chat/count",
+    response_model=ChatCountResponse,
+    responses={503: {"model": ErrorResponse}},
+    summary="Count persisted chat sessions.",
+    description="Returns the total number of chat sessions persisted in MongoDB.",
+)
+async def chat_metrics(
+    service: ChatService = Depends(get_chat_service),
+) -> ChatCountResponse:
+    chats = await service.chat_count_metrics()
+    return chats
+
+
+@router.get(
+    "/chat/transcripts",
+    response_model=ChatTranscriptsResponse,
+    responses={503: {"model": ErrorResponse}},
+    summary="List persisted chat transcripts.",
+    description="Returns all persisted chat_json transcripts keyed by session_id.",
+)
+async def list_chat_transcripts(
+    service: ChatService = Depends(get_chat_service),
+) -> ChatTranscriptsResponse:
+    return await service.list_chat_transcripts()
 
 
 @router.post(

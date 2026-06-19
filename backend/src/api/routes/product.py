@@ -61,8 +61,6 @@ async def ingest_products(
         documents.append(UploadedDocument(filename=filename, content=decode_bytes(raw)))
 
     if not documents:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files provided.")
 
     return await service.ingest_products(documents)

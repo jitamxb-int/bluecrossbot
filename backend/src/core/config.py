@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
 
     # --- MongoDB (chat session storage) ---
-    mongodb_uri: str | None = "mongodb+srv://jitamxb:7AT12-4Ong@meetmind-cluster.ehuyp5e.mongodb.net/?appName=meetmind-cluster"
+    mongodb_uri: str | None = (
+        "mongodb+srv://jitamxb:7AT12-4Ong@meetmind-cluster.ehuyp5e.mongodb.net/?appName=meetmind-cluster"
+    )
     mongodb_db: str = "blue_cross_rag"
     mongodb_chat_collection: str = "blue_cross_chat_session"
     mongodb_timeout_ms: int = 5000

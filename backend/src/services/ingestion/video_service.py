@@ -36,9 +36,7 @@ class VideoIngestionService:
         self._repository = repository
         self._settings = settings
 
-    async def ingest_videos(
-        self, documents: list[UploadedDocument]
-    ) -> VideoIngestResponse:
+    async def ingest_videos(self, documents: list[UploadedDocument]) -> VideoIngestResponse:
         collection_name = self._settings.qdrant_collection_name
         await self._repository.ensure_collection(collection_name)
 
@@ -93,9 +91,7 @@ class VideoIngestionService:
         )
 
     @staticmethod
-    def _build_payload(
-        filename: str, record: VideoRecord, upload_ts: datetime
-    ) -> dict:
+    def _build_payload(filename: str, record: VideoRecord, upload_ts: datetime) -> dict:
         document_id = md5_document_id(filename, record.title)
         return {
             "document_id": document_id,

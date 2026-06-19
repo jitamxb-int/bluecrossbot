@@ -107,9 +107,7 @@ class IngestionService:
                     chunk_count=len(chunks),
                 )
             except Exception as exc:  # noqa: BLE001 - skip the file, keep the batch going
-                logger.error(
-                    "document_skipped", document_name=document.filename, error=str(exc)
-                )
+                logger.error("document_skipped", document_name=document.filename, error=str(exc))
                 skipped.append(SkippedFile(file=document.filename, reason=str(exc)))
 
         total_chunks = 0

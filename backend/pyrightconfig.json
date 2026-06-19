@@ -1,0 +1,6 @@
+{
+  "include": ["src", "server.py", "server_run.py"],
+  "extraPaths": ["."],
+  "venvPath": ".",
+  "venv": ".venv"
+}

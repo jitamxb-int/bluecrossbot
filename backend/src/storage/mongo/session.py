@@ -54,12 +54,72 @@ class ChatSession(Document):
     updated_at: datetime = Field(default_factory=_utcnow)
 
     class Settings:
-        name = "chat_session"
+        name = "blue_cross_chat_session"
         indexes = [IndexModel([("session_id", 1)], unique=True, name="uniq_session_id")]
 
 
 class SessionRepository:
     """All reads/writes of session memory go through this small repository."""
+
+    async def count_sessions(self) -> int:
+        """Return the number of persisted chat sessions."""
+        return await ChatSession.count()
+
+    async def count_sessions_messages(self) -> int:
+        """Log each persisted transcript and return the total message count."""
+        sessions = await ChatSession.find_all().to_list()
+        total_messages = 0
+        for session in sessions:
+            message_count = len(session.chat_json)
+            total_messages += message_count
+        return total_messages
+
+    async def count_sessions_minutes(self) -> float:
+        """Return the total persisted chat duration in minutes."""
+        sessions = await ChatSession.find_all().to_list()
+        total_seconds = sum(session.duration_seconds or 0.0 for session in sessions)
+        return total_seconds / 60
+
+    _SORT_FIELD_MAP: dict[str, str] = {
+        "id": "_id",
+        "started_at": "started_at",
+        "ended_at": "ended_at",
+        "duration_seconds": "duration_seconds",
+        "created_at": "created_at",
+    }
+
+    async def list_sessions(
+        self,
+        limit: int,
+        offset: int,
+        status: str | None,
+        sort_by: str,
+        sort_order: str,
+    ) -> tuple[int, list["ChatSession"]]:
+        """Return ``(total, page)`` with optional status filter and sorting."""
+        filter_expr = {}
+        if status == "active":
+            filter_expr = {"is_active": True}
+        elif status == "inactive":
+            filter_expr = {"is_active": False}
+
+        query = ChatSession.find(filter_expr) if filter_expr else ChatSession.find_all()
+        total = await query.count()
+
+        mongo_field = self._SORT_FIELD_MAP.get(sort_by, "_id")
+        sort_expr = f"+{mongo_field}" if sort_order == "asc" else f"-{mongo_field}"
+        sessions = (
+            await query.sort(sort_expr)
+            .skip(offset)
+            .limit(limit)
+            .to_list()
+        )
+        return total, sessions
+
+    async def list_chat_json_by_session_id(self) -> dict[str, list[dict]]:
+        """Return all persisted transcripts keyed by session id."""
+        sessions = await ChatSession.find_all().to_list()
+        return {session.session_id: session.chat_json for session in sessions}
 
     async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
         """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.

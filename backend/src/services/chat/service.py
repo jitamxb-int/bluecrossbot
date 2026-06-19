@@ -21,8 +21,12 @@ import re
 import uuid
 
 from src.api.models.chat import (
+    ChatCountResponse,
     ChatRequest,
     ChatResponse,
+    ChatSessionItem,
+    ChatSessionListResponse,
+    ChatTranscriptsResponse,
     ProductReference,
     SessionInfo,
     VideoReference,
@@ -110,6 +114,52 @@ class ChatService:
         self._llm = llm
         self._sessions = sessions
         self._settings = settings
+
+    async def chat_count_metrics(self) -> ChatCountResponse:
+        total_chats = await self._sessions.count_sessions()
+        total_chat_messages = await self._sessions.count_sessions_messages()
+        total_chat_minutes = await self._sessions.count_sessions_minutes()
+        # minutes_of_meetings=await self._sessions.list_chat_json_by_session_id()
+        return ChatCountResponse(
+            total_chats=total_chats,
+            total_chat_messages=total_chat_messages,
+            total_chat_minutes=total_chat_minutes,
+            # minutes_of_meetings=minutes_of_meetings
+        )
+
+    async def list_sessions(
+        self,
+        limit: int,
+        offset: int,
+        status: str | None,
+        sort_by: str,
+        sort_order: str,
+    ) -> ChatSessionListResponse:
+        total, sessions = await self._sessions.list_sessions(
+            limit=limit,
+            offset=offset,
+            status=status,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        items = [
+            ChatSessionItem(
+                session_id=s.session_id,
+                started_at=s.started_at,
+                ended_at=s.ended_at,
+                duration_seconds=s.duration_seconds,
+                is_active=s.is_active,
+                message_count=len(s.chat_json),
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+            )
+            for s in sessions
+        ]
+        return ChatSessionListResponse(total=total, limit=limit, offset=offset, sessions=items)
+
+    async def list_chat_transcripts(self) -> ChatTranscriptsResponse:
+        transcripts = await self._sessions.list_chat_json_by_session_id()
+        return ChatTranscriptsResponse(transcripts=transcripts)
 
     async def answer(self, request: ChatRequest) -> ChatResponse:
         session_id = request.session_id or uuid.uuid4().hex
