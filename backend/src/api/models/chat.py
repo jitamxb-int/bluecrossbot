@@ -10,6 +10,7 @@ pulled from the vector store payloads — never invented by the model.
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -72,3 +73,63 @@ class ChatResponse(BaseModel):
     )
     products: list[ProductReference] = Field(default_factory=list)
     videos: list[VideoReference] = Field(default_factory=list)
+
+
+class ChatCountResponse(BaseModel):
+    """Total number of persisted chat sessions."""
+
+    total_chats: int = Field(..., ge=0, description="Number of persisted chat sessions.")
+    total_chat_messages: int = Field(
+        ..., ge=0, description="Number of persisted chat transcript messages."
+    )
+    total_chat_minutes: float = Field(
+        ..., ge=0, description="Total persisted chat duration in minutes."
+    )
+    minutes_of_meetings: dict[str, list[dict]] = Field(
+        default_factory=dict,
+        description="Map of session_id to persisted chat_json transcript.",
+    )
+
+
+class ChatTranscriptsResponse(BaseModel):
+    """Persisted chat transcripts keyed by session id."""
+
+    transcripts: dict[str, list[dict]] = Field(
+        default_factory=dict,
+        description="Map of session_id to persisted chat_json transcript.",
+    )
+
+
+class SessionSortField(str, Enum):
+    id = "id"
+    started_at = "started_at"
+    ended_at = "ended_at"
+    duration_seconds = "duration_seconds"
+    created_at = "created_at"
+
+
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
+
+
+class ChatSessionItem(BaseModel):
+    """A single chat session row returned in the paginated list."""
+
+    session_id: str
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_seconds: float = 0.0
+    is_active: bool = True
+    message_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatSessionListResponse(BaseModel):
+    """Paginated list of chat sessions."""
+
+    total: int = Field(..., description="Total sessions matching the filter.")
+    limit: int = Field(..., description="Page size requested.")
+    offset: int = Field(..., description="Page offset requested.")
+    sessions: list[ChatSessionItem] = Field(default_factory=list)

@@ -16,6 +16,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from src.core.config import Settings
+from src.storage.mongo.feedback import SessionFeedback
 from src.storage.mongo.session import ChatSession
 
 
@@ -37,12 +38,13 @@ def create_mongo_client(settings: Settings) -> AsyncMongoClient:
 
 
 async def init_session_store(client: AsyncMongoClient, settings: Settings) -> None:
-    """Initialize Beanie with the chat session document model.
+    """Initialize Beanie with all document models.
 
-    The collection name comes from config; set it before ``init_beanie`` reads it.
+    Collection names are declared directly in each model's Settings.name —
+    Beanie 2.x processes them at class-definition time, so runtime mutations
+    to Settings.name have no effect.
     """
-    ChatSession.Settings.name = settings.mongodb_chat_collection
     await init_beanie(
         database=client[settings.mongodb_db],
-        document_models=[ChatSession],
+        document_models=[ChatSession, SessionFeedback],
     )

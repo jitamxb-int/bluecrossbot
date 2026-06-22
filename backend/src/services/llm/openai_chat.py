@@ -85,9 +85,7 @@ class OpenAIChatProvider:
 
     def _guard_key(self) -> None:
         if self._api_key in _PLACEHOLDER_KEYS:
-            raise LLMError(
-                "OPENAI_API_KEY is not configured. Set a valid key in your .env file."
-            )
+            raise LLMError("OPENAI_API_KEY is not configured. Set a valid key in your .env file.")
 
     async def complete_structured(self, messages: list[dict]) -> dict:
         """Run the answering call; return answer + summary + product/video ids."""
@@ -115,9 +113,7 @@ class OpenAIChatProvider:
             "source_ids": data.get("source_ids", []),
         }
 
-    async def rewrite_standalone(
-        self, query: str, summary: str | None, history: list[dict]
-    ) -> str:
+    async def rewrite_standalone(self, query: str, summary: str | None, history: list[dict]) -> str:
         """Rewrite a possibly-elliptical follow-up into a standalone query.
 
         Returns the original query unchanged when there is no prior context.

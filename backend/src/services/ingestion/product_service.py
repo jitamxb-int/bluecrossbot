@@ -39,9 +39,7 @@ class ProductIngestionService:
         self._repository = repository
         self._settings = settings
 
-    async def ingest_products(
-        self, documents: list[UploadedDocument]
-    ) -> ProductIngestResponse:
+    async def ingest_products(self, documents: list[UploadedDocument]) -> ProductIngestResponse:
         collection_name = self._settings.qdrant_collection_name
         await self._repository.ensure_collection(collection_name)
 
@@ -102,9 +100,7 @@ class ProductIngestionService:
         )
 
     @staticmethod
-    def _build_payload(
-        filename: str, record: ProductRecord, upload_ts: datetime
-    ) -> dict:
+    def _build_payload(filename: str, record: ProductRecord, upload_ts: datetime) -> dict:
         # Deterministic id so re-ingesting the same product is idempotent.
         document_id = md5_document_id(filename, record.name)
         return {

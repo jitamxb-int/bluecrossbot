@@ -5,3 +5,8 @@ prompt.txt
 .env
 .env.*
 !.env.example
+
+.idea
+.vscode
+
+pyrightconfig.json

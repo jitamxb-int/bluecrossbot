@@ -34,6 +34,20 @@ def _as_aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+def _date_filter(start: datetime | None, end: datetime | None) -> dict:
+    """Build a Mongo filter on ``created_at`` for an optional date range.
+
+    Returns ``{}`` (match-all) when neither bound is given, so the count
+    methods behave exactly as before for all-time queries.
+    """
+    rng: dict = {}
+    if start is not None:
+        rng["$gte"] = _as_aware(start)
+    if end is not None:
+        rng["$lte"] = _as_aware(end)
+    return {"created_at": rng} if rng else {}
+
+
 class ChatSession(Document):
     """One conversation thread. Identified by a unique ``session_id``."""
 
@@ -54,12 +68,81 @@ class ChatSession(Document):
     updated_at: datetime = Field(default_factory=_utcnow)
 
     class Settings:
-        name = "chat_session"
+        name = "blue_cross_chat_session"
         indexes = [IndexModel([("session_id", 1)], unique=True, name="uniq_session_id")]
 
 
 class SessionRepository:
     """All reads/writes of session memory go through this small repository."""
+
+    async def count_sessions(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> int:
+        """Return the number of persisted chat sessions in the optional date range."""
+        return await ChatSession.find(_date_filter(start_date, end_date)).count()
+
+    async def count_sessions_messages(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> int:
+        """Return the total message count across sessions in the optional date range."""
+        sessions = await ChatSession.find(_date_filter(start_date, end_date)).to_list()
+        total_messages = 0
+        for session in sessions:
+            message_count = len(session.chat_json)
+            total_messages += message_count
+        return total_messages
+
+    async def count_sessions_minutes(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> float:
+        """Return the total persisted chat duration (minutes) in the optional date range."""
+        sessions = await ChatSession.find(_date_filter(start_date, end_date)).to_list()
+        total_seconds = sum(session.duration_seconds or 0.0 for session in sessions)
+        return total_seconds / 60
+
+    _SORT_FIELD_MAP: dict[str, str] = {
+        "id": "_id",
+        "started_at": "started_at",
+        "ended_at": "ended_at",
+        "duration_seconds": "duration_seconds",
+        "created_at": "created_at",
+    }
+
+    async def list_sessions(
+        self,
+        limit: int,
+        offset: int,
+        status: str | None,
+        sort_by: str,
+        sort_order: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> tuple[int, list["ChatSession"]]:
+        """Return ``(total, page)`` with optional status/date filters and sorting."""
+        filter_expr = {}
+        if status == "active":
+            filter_expr = {"is_active": True}
+        elif status == "inactive":
+            filter_expr = {"is_active": False}
+        filter_expr.update(_date_filter(start_date, end_date))
+
+        query = ChatSession.find(filter_expr) if filter_expr else ChatSession.find_all()
+        total = await query.count()
+
+        mongo_field = self._SORT_FIELD_MAP.get(sort_by, "_id")
+        sort_expr = f"+{mongo_field}" if sort_order == "asc" else f"-{mongo_field}"
+        sessions = (
+            await query.sort(sort_expr)
+            .skip(offset)
+            .limit(limit)
+            .to_list()
+        )
+        return total, sessions
+
+    async def list_chat_json_by_session_id(self) -> dict[str, list[dict]]:
+        """Return all persisted transcripts keyed by session id."""
+        sessions = await ChatSession.find_all().to_list()
+        return {session.session_id: session.chat_json for session in sessions}
 
     async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
         """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.

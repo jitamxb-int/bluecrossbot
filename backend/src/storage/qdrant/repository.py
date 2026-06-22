@@ -89,9 +89,7 @@ class QdrantRepository:
                 field_name=field,
                 field_schema=PayloadSchemaType.KEYWORD,
             )
-        logger.info(
-            "collection_created", collection=name, vector_size=size, distance=metric.value
-        )
+        logger.info("collection_created", collection=name, vector_size=size, distance=metric.value)
 
     async def upsert_points(self, name: str, points: list[PointStruct]) -> int:
         """Upsert points in configurable batches. Returns the number upserted."""

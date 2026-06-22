@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import HTTPException, Request, status
 
 from src.services.chat.service import ChatService
+from src.services.feedback.service import FeedbackService
 from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
@@ -30,6 +31,20 @@ def get_video_ingestion_service(request: Request) -> VideoIngestionService:
 
 def get_retrieval_service(request: Request) -> RetrievalService:
     return request.app.state.retrieval_service
+
+
+def get_feedback_service(request: Request) -> FeedbackService:
+    service = getattr(request.app.state, "feedback_service", None)
+    if service is None:
+        reason = (
+            getattr(request.app.state, "chat_unavailable_reason", None)
+            or "MongoDB is not configured (set MONGODB_URI)."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Feedback service is unavailable: {reason}",
+        )
+    return service
 
 
 def get_chat_service(request: Request) -> ChatService:

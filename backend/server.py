@@ -27,6 +27,7 @@ from src.core.logging.setup import RequestIDMiddleware, configure_logging, get_l
 from src.core.mongo.client import create_mongo_client, init_session_store
 from src.core.vector_db.client import create_qdrant_client
 from src.services.chat.service import ChatService
+from src.services.feedback.service import FeedbackService
 from src.services.chunking.service import ChunkingService
 from src.services.embedding.errors import EmbeddingError
 from src.services.embedding.openai_provider import OpenAIEmbeddingProvider
@@ -36,6 +37,7 @@ from src.services.ingestion.video_service import VideoIngestionService
 from src.services.llm.errors import LLMError
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
+from src.storage.mongo.feedback import FeedbackRepository
 from src.storage.mongo.session import SessionRepository
 from src.storage.qdrant.repository import QdrantRepository
 
@@ -103,6 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.llm = llm
     app.state.mongo_client = None
     app.state.chat_service = None
+    app.state.feedback_service = None
     app.state.chat_unavailable_reason = None
 
     # Best-effort collection bootstrap; readiness probe reflects actual health.
@@ -125,6 +128,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 sessions=SessionRepository(),
                 settings=settings,
             )
+            app.state.feedback_service = FeedbackService(FeedbackRepository())
             logger.info("mongo_session_store_ready", database=settings.mongodb_db)
         except Exception as exc:  # noqa: BLE001
             logger.exception("mongo_init_failed", error=str(exc))
@@ -168,14 +172,10 @@ def build_app() -> FastAPI:
     app.include_router(api_router, prefix=API_PREFIX)
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
-            content=ErrorResponse(
-                detail=str(exc.detail), error_type="HTTPException"
-            ).model_dump(),
+            content=ErrorResponse(detail=str(exc.detail), error_type="HTTPException").model_dump(),
         )
 
     @app.exception_handler(EmbeddingError)
@@ -212,9 +212,7 @@ def build_app() -> FastAPI:
         )
 
     @app.exception_handler(UnexpectedResponse)
-    async def qdrant_unexpected_handler(
-        request: Request, exc: UnexpectedResponse
-    ) -> JSONResponse:
+    async def qdrant_unexpected_handler(request: Request, exc: UnexpectedResponse) -> JSONResponse:
         logger.error("qdrant_unexpected_response", error=str(exc))
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY,
