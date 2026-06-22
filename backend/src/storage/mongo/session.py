@@ -34,6 +34,20 @@ def _as_aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
+def _date_filter(start: datetime | None, end: datetime | None) -> dict:
+    """Build a Mongo filter on ``created_at`` for an optional date range.
+
+    Returns ``{}`` (match-all) when neither bound is given, so the count
+    methods behave exactly as before for all-time queries.
+    """
+    rng: dict = {}
+    if start is not None:
+        rng["$gte"] = _as_aware(start)
+    if end is not None:
+        rng["$lte"] = _as_aware(end)
+    return {"created_at": rng} if rng else {}
+
+
 class ChatSession(Document):
     """One conversation thread. Identified by a unique ``session_id``."""
 
@@ -61,22 +75,28 @@ class ChatSession(Document):
 class SessionRepository:
     """All reads/writes of session memory go through this small repository."""
 
-    async def count_sessions(self) -> int:
-        """Return the number of persisted chat sessions."""
-        return await ChatSession.count()
+    async def count_sessions(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> int:
+        """Return the number of persisted chat sessions in the optional date range."""
+        return await ChatSession.find(_date_filter(start_date, end_date)).count()
 
-    async def count_sessions_messages(self) -> int:
-        """Log each persisted transcript and return the total message count."""
-        sessions = await ChatSession.find_all().to_list()
+    async def count_sessions_messages(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> int:
+        """Return the total message count across sessions in the optional date range."""
+        sessions = await ChatSession.find(_date_filter(start_date, end_date)).to_list()
         total_messages = 0
         for session in sessions:
             message_count = len(session.chat_json)
             total_messages += message_count
         return total_messages
 
-    async def count_sessions_minutes(self) -> float:
-        """Return the total persisted chat duration in minutes."""
-        sessions = await ChatSession.find_all().to_list()
+    async def count_sessions_minutes(
+        self, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> float:
+        """Return the total persisted chat duration (minutes) in the optional date range."""
+        sessions = await ChatSession.find(_date_filter(start_date, end_date)).to_list()
         total_seconds = sum(session.duration_seconds or 0.0 for session in sessions)
         return total_seconds / 60
 
@@ -95,13 +115,16 @@ class SessionRepository:
         status: str | None,
         sort_by: str,
         sort_order: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> tuple[int, list["ChatSession"]]:
-        """Return ``(total, page)`` with optional status filter and sorting."""
+        """Return ``(total, page)`` with optional status/date filters and sorting."""
         filter_expr = {}
         if status == "active":
             filter_expr = {"is_active": True}
         elif status == "inactive":
             filter_expr = {"is_active": False}
+        filter_expr.update(_date_filter(start_date, end_date))
 
         query = ChatSession.find(filter_expr) if filter_expr else ChatSession.find_all()
         total = await query.count()

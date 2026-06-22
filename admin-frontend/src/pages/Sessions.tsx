@@ -12,6 +12,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '../components/ui/tooltip';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -21,7 +22,7 @@ import {
 } from '../components/ui/select';
 import { Search, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatMinutes } from '../utils/formatters';
-import type { SessionSortField, SortOrder } from '../types/api/chat.types';
+import { currentMonthRange, toApiRange } from '../utils/dateRange';
 
 const Sessions = () => {
   const dispatch = useAppDispatch();
@@ -36,20 +37,24 @@ const Sessions = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [range, setRange] = useState(currentMonthRange());
   // const [sortBy, setSortBy] = useState<SessionSortField>('started_at');
   // const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   const offset = (currentPage - 1) * pageSize;
+  const rangeInvalid = !range.start || !range.end || range.start > range.end;
 
   useEffect(() => {
+    if (rangeInvalid) return;
     dispatch(fetchSessions({
       limit: pageSize,
       offset,
       status: statusFilter || undefined,
       sortBy: 'started_at',
       sortOrder: 'asc',
+      ...toApiRange(range),
     }));
-  }, [dispatch, pageSize, offset, statusFilter]);
+  }, [dispatch, pageSize, offset, statusFilter, range.start, range.end, rangeInvalid]);
 
   const filtered = sessions.filter((s) =>
     s.session_id.toLowerCase().includes(search.toLowerCase())
@@ -82,8 +87,12 @@ const Sessions = () => {
     <AdminLayout>
       <TooltipProvider>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <h1 className="text-2xl font-bold">Chat Sessions</h1>
+            <DateRangeFilter
+              range={range}
+              onRangeChange={(r) => { setRange(r); setCurrentPage(1); }}
+            />
           </div>
 
           {/* Toolbar */}

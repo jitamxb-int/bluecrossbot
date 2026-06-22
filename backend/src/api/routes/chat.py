@@ -7,6 +7,8 @@ references with their real image/video URLs from the vector store.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import get_chat_service
@@ -41,6 +43,12 @@ async def list_sessions(
     status: str | None = Query(default=None, description="Filter by status: active | inactive."),
     sortBy: SessionSortField = Query(default=SessionSortField.id, description="Field to sort by."),
     sortOrder: SortOrder = Query(default=SortOrder.asc, description="Sort direction: asc | desc."),
+    start_date: datetime | None = Query(
+        default=None, description="Filter sessions created on/after this datetime (UTC)."
+    ),
+    end_date: datetime | None = Query(
+        default=None, description="Filter sessions created on/before this datetime (UTC)."
+    ),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionListResponse:
     return await service.list_sessions(
@@ -49,6 +57,8 @@ async def list_sessions(
         status=status,
         sort_by=sortBy.value,
         sort_order=sortOrder.value,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
@@ -60,9 +70,15 @@ async def list_sessions(
     description="Returns the total number of chat sessions persisted in MongoDB.",
 )
 async def chat_metrics(
+    start_date: datetime | None = Query(
+        default=None, description="Filter sessions created on/after this datetime (UTC)."
+    ),
+    end_date: datetime | None = Query(
+        default=None, description="Filter sessions created on/before this datetime (UTC)."
+    ),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatCountResponse:
-    chats = await service.chat_count_metrics()
+    chats = await service.chat_count_metrics(start_date, end_date)
     return chats
 
 

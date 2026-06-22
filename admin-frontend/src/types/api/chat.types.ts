@@ -77,4 +77,11 @@ export interface SessionListParams {
   status?: string
   sortBy?: SessionSortField
   sortOrder?: SortOrder
+  startDate?: string // ISO datetime, sent as ?start_date=
+  endDate?: string // ISO datetime, sent as ?end_date=
+}
+
+export interface ChatMetricsParams {
+  startDate?: string // ISO datetime, sent as ?start_date=
+  endDate?: string // ISO datetime, sent as ?end_date=
 }

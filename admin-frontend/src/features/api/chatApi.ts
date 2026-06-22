@@ -4,6 +4,7 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatCountResponse,
+  ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
   SessionListParams,
@@ -12,15 +13,20 @@ export type {
   ChatRequest,
   ChatResponse,
   ChatCountResponse,
+  ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
   SessionListParams,
 } from '../../types/api/chat.types'
 
-export async function getChatMetricsApi(): Promise<ChatCountResponse> {
+export async function getChatMetricsApi(params: ChatMetricsParams = {}): Promise<ChatCountResponse> {
   const tokens = getStoredTokens()
+  const query = new URLSearchParams()
+  if (params.startDate) query.set('start_date', params.startDate)
+  if (params.endDate) query.set('end_date', params.endDate)
+  const qs = query.toString()
 
-  return request<ChatCountResponse>('/chat/count', {
+  return request<ChatCountResponse>(`/chat/count${qs ? `?${qs}` : ''}`, {
     method: 'GET',
     headers: {
       ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
@@ -47,6 +53,8 @@ export async function getSessionsApi(params: SessionListParams = {}): Promise<Ch
   if (params.status) query.set('status', params.status)
   if (params.sortBy) query.set('sortBy', params.sortBy)
   if (params.sortOrder) query.set('sortOrder', params.sortOrder)
+  if (params.startDate) query.set('start_date', params.startDate)
+  if (params.endDate) query.set('end_date', params.endDate)
   const qs = query.toString()
   return request<ChatSessionListResponse>(`/sessions${qs ? `?${qs}` : ''}`, {
     method: 'GET',

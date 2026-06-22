@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { ROUTES } from './routePaths';
 import DashboardPage from '../pages/Dashboard';
 import Sessions from '../pages/Sessions';
@@ -16,10 +16,12 @@ import FeedbackLogs from '../pages/FeedbackLogs';
 
 const AppRoutes: React.FC = () => (
   <Routes>
+    <Route path="/" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
     <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
     <Route path={ROUTES.SESSIONS} element={<Sessions />} />
     <Route path={ROUTES.TRANSCRIPT} element={<TranscriptPage />} />
     <Route path={ROUTES.FEEDBACK_LOGS} element={<FeedbackLogs />} />
+    <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
     {/* <Route path={ROUTES.PRODUCTS}        element={<ProductsPage />} />
     <Route path={ROUTES.PRODUCT_INGEST}  element={<ProductIngestPage />} />
     <Route path={ROUTES.VIDEOS}          element={<VideosPage />} />

@@ -3,16 +3,17 @@ import { getChatMetricsApi, getChatTranscriptsApi, getSessionsApi } from '../api
 import { normalizeError } from '../../utils/errorHandler';
 import type {
   ChatCountResponse,
+  ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
   SessionListParams,
 } from '../../types/api/chat.types';
 
-export const fetchChatMetrics = createAsyncThunk<ChatCountResponse, void, { rejectValue: string }>(
+export const fetchChatMetrics = createAsyncThunk<ChatCountResponse, ChatMetricsParams | void, { rejectValue: string }>(
   'chat/fetchMetrics',
-  async (_, { rejectWithValue }) => {
+  async (params, { rejectWithValue }) => {
     try {
-      return await getChatMetricsApi();
+      return await getChatMetricsApi(params ?? {});
     } catch (err) {
       return rejectWithValue(normalizeError(err).message);
     }

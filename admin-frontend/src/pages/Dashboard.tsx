@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { MessageSquare, MessagesSquare, Clock, TrendingUp } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { fetchChatMetrics } from '../features/thunks/chatThunks';
 import { selectChatMetrics, selectChatStatus, selectChatError } from '../features/selectors/chatSelectors';
 import { formatMinutes } from '../utils/formatters';
+import { currentMonthRange, toApiRange } from '../utils/dateRange';
 
 const Dashboard = () => {
   const dispatch = useAppDispatch();
@@ -13,9 +15,14 @@ const Dashboard = () => {
   const status = useAppSelector(selectChatStatus);
   const error = useAppSelector(selectChatError);
 
+  const [range, setRange] = useState(currentMonthRange());
+  const rangeInvalid = !range.start || !range.end || range.start > range.end;
+
   useEffect(() => {
-    dispatch(fetchChatMetrics());
-  }, [dispatch]);
+    if (!rangeInvalid) {
+      dispatch(fetchChatMetrics(toApiRange(range)));
+    }
+  }, [dispatch, range.start, range.end, rangeInvalid]);
 
   const stats = [
     {
@@ -54,25 +61,19 @@ const Dashboard = () => {
     },
   ];
 
-  if (status === 'loading') {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading dashboard…</p>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
+  const isLoading = status === 'loading';
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
-          <p className="text-muted-foreground">Real-time BlueCross chat activity and engagement metrics.</p>
+        {/* Header with compact date-range filter in the top-right */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+            <p className="text-muted-foreground">BlueCross chat activity and engagement metrics for the selected period.</p>
+          </div>
+
+          <DateRangeFilter range={range} onRangeChange={setRange} />
         </div>
 
         {error && (
@@ -81,6 +82,17 @@ const Dashboard = () => {
           </div>
         )}
 
+        {isLoading && (
+          <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-muted-foreground">Loading dashboard…</p>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && (
+        <>
         {/* Stat Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {stats.map((stat) => {
@@ -158,6 +170,8 @@ const Dashboard = () => {
               </CardContent>
             </Card>
           </div>
+        )}
+        </>
         )}
       </div>
     </AdminLayout>

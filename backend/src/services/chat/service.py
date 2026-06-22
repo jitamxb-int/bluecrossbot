@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 from src.api.models.chat import (
     ChatCountResponse,
@@ -115,10 +116,14 @@ class ChatService:
         self._sessions = sessions
         self._settings = settings
 
-    async def chat_count_metrics(self) -> ChatCountResponse:
-        total_chats = await self._sessions.count_sessions()
-        total_chat_messages = await self._sessions.count_sessions_messages()
-        total_chat_minutes = await self._sessions.count_sessions_minutes()
+    async def chat_count_metrics(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> ChatCountResponse:
+        total_chats = await self._sessions.count_sessions(start_date, end_date)
+        total_chat_messages = await self._sessions.count_sessions_messages(start_date, end_date)
+        total_chat_minutes = await self._sessions.count_sessions_minutes(start_date, end_date)
         # minutes_of_meetings=await self._sessions.list_chat_json_by_session_id()
         return ChatCountResponse(
             total_chats=total_chats,
@@ -134,6 +139,8 @@ class ChatService:
         status: str | None,
         sort_by: str,
         sort_order: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> ChatSessionListResponse:
         total, sessions = await self._sessions.list_sessions(
             limit=limit,
@@ -141,6 +148,8 @@ class ChatService:
             status=status,
             sort_by=sort_by,
             sort_order=sort_order,
+            start_date=start_date,
+            end_date=end_date,
         )
         items = [
             ChatSessionItem(
