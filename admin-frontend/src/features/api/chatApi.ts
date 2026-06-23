@@ -7,6 +7,7 @@ import type {
   ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
+  DeleteSessionsResponse,
   SessionListParams,
 } from '../../types/api/chat.types'
 export type {
@@ -16,6 +17,7 @@ export type {
   ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
+  DeleteSessionsResponse,
   SessionListParams,
 } from '../../types/api/chat.types'
 
@@ -59,6 +61,18 @@ export async function getSessionsApi(params: SessionListParams = {}): Promise<Ch
   return request<ChatSessionListResponse>(`/sessions${qs ? `?${qs}` : ''}`, {
     method: 'GET',
     headers: { ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}) },
+  })
+}
+
+export async function deleteSessionsApi(sessionIds: string[]): Promise<DeleteSessionsResponse> {
+  const tokens = getStoredTokens()
+
+  return request<DeleteSessionsResponse>('/sessions', {
+    method: 'DELETE',
+    headers: {
+      ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+    },
+    json: { session_ids: sessionIds },
   })
 }
 

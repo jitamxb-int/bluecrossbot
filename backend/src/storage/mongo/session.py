@@ -10,7 +10,7 @@ recomputes timing.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from beanie import Document
 from pydantic import Field
@@ -19,6 +19,9 @@ from pymongo import IndexModel
 from src.core.logging.setup import get_logger
 
 logger = get_logger(__name__)
+
+# Idle longer than this (since the last turn's ``ended_at``) → session marked inactive.
+INACTIVITY_TIMEOUT = timedelta(hours=1)
 
 
 def _utcnow() -> datetime:
@@ -100,6 +103,18 @@ class SessionRepository:
         total_seconds = sum(session.duration_seconds or 0.0 for session in sessions)
         return total_seconds / 60
 
+    async def deactivate_stale(self) -> None:
+        """Mark sessions idle longer than ``INACTIVITY_TIMEOUT`` as inactive (bulk update).
+
+        Idleness is measured from ``ended_at`` (refreshed on every turn). Sessions with no
+        ``ended_at`` won't match ``$lt`` and are left untouched. ``cutoff`` is tz-aware; PyMongo
+        encodes it to a UTC BSON date so the comparison against stored dates is correct.
+        """
+        cutoff = _utcnow() - INACTIVITY_TIMEOUT
+        await ChatSession.find(
+            {"is_active": True, "ended_at": {"$lt": cutoff}}
+        ).update({"$set": {"is_active": False}})
+
     _SORT_FIELD_MAP: dict[str, str] = {
         "id": "_id",
         "started_at": "started_at",
@@ -144,6 +159,13 @@ class SessionRepository:
         sessions = await ChatSession.find_all().to_list()
         return {session.session_id: session.chat_json for session in sessions}
 
+    async def delete_by_ids(self, session_ids: list[str]) -> int:
+        """Permanently delete sessions by ``session_id``. Returns the number deleted."""
+        if not session_ids:
+            return 0
+        result = await ChatSession.find({"session_id": {"$in": session_ids}}).delete()
+        return result.deleted_count if result else 0
+
     async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
         """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.
 
@@ -162,8 +184,14 @@ class SessionRepository:
         user_query: str,
         assistant_content: str,
         summary: str | None = None,
+        started_at: datetime | None = None,
     ) -> ChatSession:
-        """Append one user+assistant turn, refresh the summary, update timing."""
+        """Append one user+assistant turn, refresh the summary, update timing.
+
+        ``started_at`` is when the user's message arrived (captured before retrieval/LLM). For a
+        brand-new session it anchors the start so the first turn records its real duration rather
+        than 0; for an existing session the original ``started_at`` is preserved.
+        """
         now = _utcnow()
         turn = [
             {"role": "user", "content": user_query},
@@ -172,13 +200,14 @@ class SessionRepository:
 
         session = await ChatSession.find_one(ChatSession.session_id == session_id)
         if session is None:
+            turn_start = _as_aware(started_at) if started_at else now
             session = ChatSession(
                 session_id=session_id,
                 chat_json=turn,
                 conversation_summary=summary,
-                started_at=now,
+                started_at=turn_start,
                 ended_at=now,
-                duration_seconds=0.0,
+                duration_seconds=(now - turn_start).total_seconds(),
             )
             await session.insert()
             return session
@@ -188,6 +217,7 @@ class SessionRepository:
             session.conversation_summary = summary
         session.ended_at = now
         session.duration_seconds = (now - _as_aware(session.started_at)).total_seconds()
+        session.is_active = True  # a returning user re-activates a previously idle session
         session.updated_at = now
         await session.save()
         return session

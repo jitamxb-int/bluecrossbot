@@ -133,3 +133,16 @@ class ChatSessionListResponse(BaseModel):
     limit: int = Field(..., description="Page size requested.")
     offset: int = Field(..., description="Page offset requested.")
     sessions: list[ChatSessionItem] = Field(default_factory=list)
+
+
+class DeleteSessionsRequest(BaseModel):
+    """Request to permanently delete one or more chat sessions."""
+
+    session_ids: list[str] = Field(..., min_length=1, description="session_ids to delete (>=1).")
+
+
+class DeleteSessionsResponse(BaseModel):
+    """Result of a session delete operation."""
+
+    deleted: int = Field(..., ge=0, description="Number of sessions actually deleted.")
+    requested: int = Field(..., ge=0, description="Number of session_ids requested.")

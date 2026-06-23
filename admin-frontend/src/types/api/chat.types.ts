@@ -85,3 +85,12 @@ export interface ChatMetricsParams {
   startDate?: string // ISO datetime, sent as ?start_date=
   endDate?: string // ISO datetime, sent as ?end_date=
 }
+
+export interface DeleteSessionsRequest {
+  session_ids: string[]
+}
+
+export interface DeleteSessionsResponse {
+  deleted: number
+  requested: number
+}

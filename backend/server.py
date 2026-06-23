@@ -27,16 +27,17 @@ from src.core.logging.setup import RequestIDMiddleware, configure_logging, get_l
 from src.core.mongo.client import create_mongo_client, init_session_store
 from src.core.vector_db.client import create_qdrant_client
 from src.services.chat.service import ChatService
-from src.services.feedback.service import FeedbackService
 from src.services.chunking.service import ChunkingService
 from src.services.embedding.errors import EmbeddingError
 from src.services.embedding.openai_provider import OpenAIEmbeddingProvider
+from src.services.feedback.service import FeedbackService
 from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
 from src.services.llm.errors import LLMError
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
+from src.services.vectorstore.service import VectorAdminService
 from src.storage.mongo.feedback import FeedbackRepository
 from src.storage.mongo.session import SessionRepository
 from src.storage.qdrant.repository import QdrantRepository
@@ -93,10 +94,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings=settings,
     )
     retrieval_service = RetrievalService(embedding, repository, settings)
+    vector_admin_service = VectorAdminService(repository, settings)
     llm = OpenAIChatProvider(settings)
 
     app.state.qdrant_client = client
     app.state.repository = repository
+    app.state.vector_admin_service = vector_admin_service
     app.state.embedding = embedding
     app.state.ingestion_service = ingestion_service
     app.state.product_ingestion_service = product_ingestion_service

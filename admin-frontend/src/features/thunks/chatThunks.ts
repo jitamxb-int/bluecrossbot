@@ -1,11 +1,12 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
-import { getChatMetricsApi, getChatTranscriptsApi, getSessionsApi } from '../api/chatApi';
+import { deleteSessionsApi, getChatMetricsApi, getChatTranscriptsApi, getSessionsApi } from '../api/chatApi';
 import { normalizeError } from '../../utils/errorHandler';
 import type {
   ChatCountResponse,
   ChatMetricsParams,
   ChatSessionListResponse,
   ChatTranscriptsResponse,
+  DeleteSessionsResponse,
   SessionListParams,
 } from '../../types/api/chat.types';
 
@@ -25,6 +26,17 @@ export const fetchSessions = createAsyncThunk<ChatSessionListResponse, SessionLi
   async (params, { rejectWithValue }) => {
     try {
       return await getSessionsApi(params);
+    } catch (err) {
+      return rejectWithValue(normalizeError(err).message);
+    }
+  }
+);
+
+export const deleteSessions = createAsyncThunk<DeleteSessionsResponse, string[], { rejectValue: string }>(
+  'chat/deleteSessions',
+  async (sessionIds, { rejectWithValue }) => {
+    try {
+      return await deleteSessionsApi(sessionIds);
     } catch (err) {
       return rejectWithValue(normalizeError(err).message);
     }
