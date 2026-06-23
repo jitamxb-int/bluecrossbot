@@ -15,6 +15,8 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    FilterSelector,
+    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -99,6 +101,42 @@ class QdrantRepository:
             await self._client.upsert(collection_name=name, points=batch, wait=True)
             logger.debug("upserted_batch", collection=name, count=len(batch), offset=start)
         return len(points)
+
+    async def delete_points_by_field(self, name: str, field: str, values: list[str]) -> int:
+        """Delete all points whose ``field`` matches any of ``values``. Returns count deleted.
+
+        ``field`` is one of the indexed keyword fields (e.g. ``document_id`` /
+        ``document_name``), so ``MatchAny`` filtering is efficient. Safe/idempotent: returns 0
+        when nothing matches or the collection does not exist.
+        """
+        if not values or not await self._client.collection_exists(name):
+            return 0
+        flt = Filter(must=[FieldCondition(key=field, match=MatchAny(any=list(values)))])
+        count = await self._client.count(collection_name=name, count_filter=flt, exact=True)
+        deleted = count.count
+        await self._client.delete(collection_name=name, points_selector=FilterSelector(filter=flt))
+        logger.info(
+            "points_deleted_by_field",
+            collection=name,
+            field=field,
+            values=len(set(values)),
+            deleted=deleted,
+        )
+        return deleted
+
+    async def clear_collection(self, name: str) -> int:
+        """Delete ALL points by recreating the collection (preserves config + payload indexes).
+
+        Returns the number of points that existed beforehand. Returns 0 if the collection does
+        not exist.
+        """
+        if not await self._client.collection_exists(name):
+            return 0
+        existing = (await self._client.count(collection_name=name, exact=True)).count
+        await self._client.delete_collection(collection_name=name)
+        await self.create_collection(name)  # re-adds VectorParams + KEYWORD indexes
+        logger.info("collection_cleared", collection=name, deleted=existing)
+        return existing
 
     async def search(
         self,

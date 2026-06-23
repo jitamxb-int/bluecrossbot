@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from src.api.models.chat import (
     ChatCountResponse,
@@ -28,6 +28,8 @@ from src.api.models.chat import (
     ChatSessionItem,
     ChatSessionListResponse,
     ChatTranscriptsResponse,
+    DeleteSessionsRequest,
+    DeleteSessionsResponse,
     ProductReference,
     SessionInfo,
     VideoReference,
@@ -142,6 +144,8 @@ class ChatService:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
     ) -> ChatSessionListResponse:
+        # Auto-expire idle sessions before listing so the status reflects current state.
+        await self._sessions.deactivate_stale()
         total, sessions = await self._sessions.list_sessions(
             limit=limit,
             offset=offset,
@@ -170,7 +174,15 @@ class ChatService:
         transcripts = await self._sessions.list_chat_json_by_session_id()
         return ChatTranscriptsResponse(transcripts=transcripts)
 
+    async def delete_sessions(self, request: DeleteSessionsRequest) -> DeleteSessionsResponse:
+        deleted = await self._sessions.delete_by_ids(request.session_ids)
+        logger.info("sessions_deleted", deleted=deleted, requested=len(request.session_ids))
+        return DeleteSessionsResponse(deleted=deleted, requested=len(request.session_ids))
+
     async def answer(self, request: ChatRequest) -> ChatResponse:
+        # Capture arrival time BEFORE retrieval + LLM so a single-turn session records the
+        # real time the turn took (otherwise started_at == ended_at and duration is 0).
+        request_started_at = datetime.now(UTC)
         session_id = request.session_id or uuid.uuid4().hex
         top_k = request.top_k or self._settings.chat_retrieval_top_k
 
@@ -221,6 +233,7 @@ class ChatService:
             user_query=request.message,
             assistant_content=answer,
             summary=new_summary,
+            started_at=request_started_at,
         )
         logger.info(
             "chat_turn_complete",

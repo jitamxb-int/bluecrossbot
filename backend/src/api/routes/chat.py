@@ -18,6 +18,8 @@ from src.api.models.chat import (
     ChatResponse,
     ChatSessionListResponse,
     ChatTranscriptsResponse,
+    DeleteSessionsRequest,
+    DeleteSessionsResponse,
     SessionSortField,
     SortOrder,
 )
@@ -60,6 +62,20 @@ async def list_sessions(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+@router.delete(
+    "/sessions",
+    response_model=DeleteSessionsResponse,
+    responses={503: {"model": ErrorResponse}},
+    summary="Delete chat sessions.",
+    description="Permanently delete one or more chat sessions (and their transcripts) by id.",
+)
+async def delete_sessions(
+    payload: DeleteSessionsRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> DeleteSessionsResponse:
+    return await service.delete_sessions(payload)
 
 
 @router.get(

@@ -15,10 +15,15 @@ from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
 from src.services.retrieval.service import RetrievalService
+from src.services.vectorstore.service import VectorAdminService
 
 
 def get_ingestion_service(request: Request) -> IngestionService:
     return request.app.state.ingestion_service
+
+
+def get_vector_admin_service(request: Request) -> VectorAdminService:
+    return request.app.state.vector_admin_service
 
 
 def get_product_ingestion_service(request: Request) -> ProductIngestionService:

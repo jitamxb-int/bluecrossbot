@@ -4,8 +4,9 @@ export function formatDate(isoString?: string): string {
 }
 
 export function formatDuration(seconds: number): string {
-  // TODO: convert to mm:ss or hh:mm:ss
-  return `${seconds}s`;
+  if (!seconds || seconds <= 0) return '0 secs';
+  if (seconds < 60) return `${Math.round(seconds)} secs`;
+  return formatMinutes(seconds / 60);
 }
 
 export function formatMinutes(minutes: number): string {
