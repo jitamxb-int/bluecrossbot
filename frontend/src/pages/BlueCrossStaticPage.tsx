@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BlueCrossUI } from '@/components/livekit_bank/bluecross/BlueCrossUI';
 import { X, MessageSquare, Send, ExternalLink } from 'lucide-react';
+import DisclaimerModal from '@/components/DisclaimerModal';
 
 const BLUE   = '#1B3D8F';
 const BLUE_L = '#3A6BC4';
@@ -701,25 +702,32 @@ export default function BlueCrossStaticPage({
     onSignOut: () => void;
 }) {
     const navigate = useNavigate();
+    const [showDisclaimer, setShowDisclaimer] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
 
-    // Auto-open chat after 3 seconds
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setChatOpen(true);
-        }, 3000);
+    const openChatFlow = () => {
+        setShowDisclaimer(true);
+    };
 
-        // Cleanup timer if component unmounts before 3 seconds
-        return () => clearTimeout(timer);
-    }, []);
+    const handleAccept = () => {
+        setShowDisclaimer(false);
+        setTimeout(() => {
+            setChatOpen(true);
+        }, 0);
+    };
+
+    const handleReject = () => {
+        setShowDisclaimer(false);
+        navigate('/blue_cross/chat');
+    };
 
     return (
         <div style={{ height: '100vh' }}>
             <BlueCrossUI authUser={authUser} timeLeft="" onBack={() => navigate('/blue_cross')}>
-                {!chatOpen && (
+                {!chatOpen && !showDisclaimer && (
                     <div className="fixed bottom-6 right-6 z-50">
                         <button
-                            onClick={() => setChatOpen(true)}
+                            onClick={openChatFlow}
                             className="group relative w-16 h-16 rounded-full flex items-center justify-center
                                 transition-transform hover:scale-110 active:scale-95
                                 border-4 border-white/80 shadow-xl"
@@ -743,6 +751,12 @@ export default function BlueCrossStaticPage({
                             <span className="absolute inset-0 rounded-full opacity-25 animate-ping" style={{ background: BLUE_L }} />
                         </button>
                     </div>
+                )}
+                {showDisclaimer && (
+                    <DisclaimerModal
+                        onAccept={handleAccept}
+                        onReject={handleReject}
+                    />
                 )}
                 {chatOpen && <ChatOverlay onClose={() => setChatOpen(false)} />}
             </BlueCrossUI>
