@@ -56,6 +56,7 @@ class IngestionService:
         chunk_size: int,
         chunk_overlap: int,
         doc_type: str = "descriptive",
+        force_source_url: str | None = None,
     ) -> IngestResponse:
         # The collection is fixed for this project (configured, not per-request).
         collection_name = self._settings.qdrant_collection_name
@@ -73,6 +74,10 @@ class IngestionService:
             # A failure on one document must not abort the whole batch.
             try:
                 source_url, body = extract_source_url(document.content)
+                # PDF-sourced docs have no real URL: force a fixed sentinel so the
+                # body's URL header (if any) is still stripped but provenance is "pdf".
+                if force_source_url is not None:
+                    source_url = force_source_url
                 # Deterministic id so re-ingesting the same file is idempotent.
                 document_id = md5_document_id(document.filename, document.content)
                 chunks = self._chunking.split(body, chunk_size, chunk_overlap)
