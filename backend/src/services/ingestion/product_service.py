@@ -107,6 +107,7 @@ class ProductIngestionService:
             "document_id": document_id,
             "document_name": filename,
             "product_name": record.name,
+            "product_type": record.product_type,
             "category": record.category,
             "division": record.division,
             "image_url": record.image,

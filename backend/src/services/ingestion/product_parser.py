@@ -34,6 +34,7 @@ class ProductRecord:
     description: str
     category: str
     division: str
+    product_type: str
     image: str | None
     page_url: str | None
 
@@ -62,6 +63,7 @@ def parse_products(content: str) -> list[ProductRecord]:
                     description=(item.get("description") or "").strip(),
                     category=(item.get("category") or "").strip(),
                     division=(item.get("division") or "").strip(),
+                    product_type=(item.get("product_type") or "").strip(),
                     image=item.get("image"),
                     page_url=page_url,
                 )
@@ -74,14 +76,17 @@ def parse_products(content: str) -> list[ProductRecord]:
 def flatten_product(record: ProductRecord) -> str:
     """Flatten a product into the natural-language string that gets embedded.
 
-    Format: ``Product: {name}. Category: {category}. Division: {division}. {description}``
+    Format: ``Product: {name}. Type: {product_type}. Category: {category}.
+    Division: {division}. {description}`` — the ``Type:`` segment is omitted when
+    ``product_type`` is empty.
 
-    Only name / category / division / description are included — ``image`` and
-    ``page_url`` are intentionally excluded (they belong in metadata only).
+    Only name / type / category / division / description are included — ``image``
+    and ``page_url`` are intentionally excluded (they belong in metadata only).
     """
-    return (
-        f"Product: {record.name}. "
-        f"Category: {record.category}. "
-        f"Division: {record.division}. "
-        f"{record.description}"
-    )
+    parts = [f"Product: {record.name}."]
+    if record.product_type:
+        parts.append(f"Type: {record.product_type}.")
+    parts.append(f"Category: {record.category}.")
+    parts.append(f"Division: {record.division}.")
+    parts.append(record.description)
+    return " ".join(parts)
