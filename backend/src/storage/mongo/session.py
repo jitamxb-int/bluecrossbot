@@ -103,16 +103,25 @@ class SessionRepository:
         total_seconds = sum(session.duration_seconds or 0.0 for session in sessions)
         return total_seconds / 60
 
-    async def deactivate_stale(self) -> None:
-        """Mark sessions idle longer than ``INACTIVITY_TIMEOUT`` as inactive (bulk update).
+    async def deactivate_stale(self, max_session_duration: timedelta | None = None) -> None:
+        """Mark sessions inactive when they are stale (bulk update).
 
-        Idleness is measured from ``ended_at`` (refreshed on every turn). Sessions with no
-        ``ended_at`` won't match ``$lt`` and are left untouched. ``cutoff`` is tz-aware; PyMongo
-        encodes it to a UTC BSON date so the comparison against stored dates is correct.
+        A session is deactivated when EITHER rule matches:
+        - **Inactivity**: idle longer than ``INACTIVITY_TIMEOUT`` (measured from
+          ``ended_at``, refreshed on every turn).
+        - **Max duration** (primary): age since ``started_at`` exceeds
+          ``max_session_duration`` — enforced regardless of activity. Omitted
+          (``None``) → only the inactivity rule applies (backward compatible).
+
+        Cutoffs are tz-aware; PyMongo encodes them to UTC BSON dates so the
+        comparison against stored dates is correct.
         """
-        cutoff = _utcnow() - INACTIVITY_TIMEOUT
+        now = _utcnow()
+        conditions: list[dict] = [{"ended_at": {"$lt": now - INACTIVITY_TIMEOUT}}]
+        if max_session_duration is not None:
+            conditions.append({"started_at": {"$lt": now - max_session_duration}})
         await ChatSession.find(
-            {"is_active": True, "ended_at": {"$lt": cutoff}}
+            {"is_active": True, "$or": conditions}
         ).update({"$set": {"is_active": False}})
 
     _SORT_FIELD_MAP: dict[str, str] = {
@@ -165,6 +174,20 @@ class SessionRepository:
             return 0
         result = await ChatSession.find({"session_id": {"$in": session_ids}}).delete()
         return result.deleted_count if result else 0
+
+    async def get_session(self, session_id: str) -> "ChatSession | None":
+        """Return the full session document, or ``None`` if the id is unknown.
+
+        Used by the chat flow to inspect ``started_at`` / ``is_active`` and the
+        transcript in a single read when enforcing the max-duration rule.
+        """
+        return await ChatSession.find_one(ChatSession.session_id == session_id)
+
+    async def mark_inactive(self, session_id: str) -> None:
+        """Mark a session inactive (e.g. once its max duration is reached)."""
+        await ChatSession.find(ChatSession.session_id == session_id).update(
+            {"$set": {"is_active": False, "updated_at": _utcnow()}}
+        )
 
     async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
         """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.

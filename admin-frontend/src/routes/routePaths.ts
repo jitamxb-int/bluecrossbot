@@ -3,6 +3,7 @@ export const ROUTES = {
   SESSIONS: '/sessions',
   TRANSCRIPT: '/transcript/:sessionId',
   FEEDBACK_LOGS: '/ai-feedback-log',
+  SESSION_CONFIG: '/session-config',
   PRODUCTS: '/products',
   PRODUCT_INGEST: '/products/ingest',
   VIDEOS: '/videos',
