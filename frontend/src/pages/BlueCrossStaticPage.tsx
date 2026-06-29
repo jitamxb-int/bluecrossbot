@@ -470,11 +470,12 @@ function tryRenderCommaProductList(text: string): React.ReactNode | null {
     return <>{elements}</>;
 }
 
-const MessageBubble = ({ msg }: { msg: Message }) => {
+const MessageBubble = ({ msg, messageIndex }: { msg: Message; messageIndex: number }) => {
     const isUser = msg.role === 'user';
     const hasProducts = !isUser && !!msg.products && msg.products.length > 0;
     const hasVideos = !isUser && !!msg.videos && msg.videos.length > 0;
     const hasCitations = !isUser && !!msg.citations && msg.citations.trim().length > 0;
+    const hasPdf = hasCitations && /\bpdf\b/i.test(msg.citations!);
 
     return (
         <div style={{
@@ -497,7 +498,7 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     borderBottomRightRadius: isUser ? '2px' : '14px',
                     borderBottomLeftRadius: !isUser ? '2px' : '14px',
                 }}>
-                    {isUser ? msg.text : renderFormattedText(msg.text)}
+                    {isUser ? msg.text : renderStructuredText(msg.text)}
                 </div>
 
                 {hasProducts && (
@@ -516,7 +517,13 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     </div>
                 )}
 
-                {hasCitations && (
+                {hasCitations && hasPdf && (
+                    <div style={{ paddingLeft: '2px' }}>
+                        <HCPConsentBar citations={msg.citations!} messageId={`msg-${messageIndex}`} />
+                    </div>
+                )}
+
+                {hasCitations && !hasPdf && (
                     <div style={{ paddingLeft: '2px' }}>
                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.03em' }}>
                             SOURCES
@@ -649,7 +656,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     ) : (
                         <>
                             {messages.map((msg, i) => (
-                                <MessageBubble key={i} msg={msg} />
+                                <MessageBubble key={i} msg={msg} messageIndex={i} />
                             ))}
                             {isLoading && <TypingBubble />}
                             <div ref={messagesEndRef} />

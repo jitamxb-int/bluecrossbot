@@ -372,13 +372,139 @@ const CitationBar = ({ citations }: { citations: string }) => {
     );
 };
 
+const HCPConsentBar = ({ citations, messageId }: { citations: string; messageId: string }) => {
+    const [accepted, setAccepted] = useState(false);
+    const [acceptedAll, setAcceptedAll] = useState(() => {
+        return localStorage.getItem('hcp_consent_accepted_all') === 'true';
+    });
+
+    const links = citations
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s && s !== 'pdf' && s !== 'PDF');
+
+    useEffect(() => {
+        if (acceptedAll) {
+            setAccepted(true);
+        }
+    }, [acceptedAll]);
+
+    const handleAccept = () => {
+        setAccepted(true);
+    };
+
+    const handleAcceptAll = () => {
+        localStorage.setItem('hcp_consent_accepted_all', 'true');
+        setAcceptedAll(true);
+        setAccepted(true);
+    };
+
+    if (accepted) {
+        return (
+            <div style={{ marginTop: '8px' }}>
+                <div style={{ 
+                    padding: '8px 10px', 
+                    background: '#f0f9ff', 
+                    borderRadius: '6px', 
+                    border: `1px solid ${BLUE_L}30`,
+                    marginBottom: '6px',
+                }}>
+                    <p style={{ fontSize: '10px', color: '#64748b', margin: 0, lineHeight: '1.4' }}>
+                        <strong style={{ color: BLUE }}>HCP Consent and Disclaimer</strong>
+                    </p>
+                    <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: '3px 0 0 0', lineHeight: '1.4' }}>
+                        This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information.
+                    </p>
+                </div>
+                {links.length > 0 && (
+                    <CitationBar citations={links.join(', ')} />
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ marginTop: '8px' }}>
+            <div style={{ 
+                padding: '10px 12px', 
+                background: '#f8fafc', 
+                borderRadius: '8px', 
+                border: '1px solid #e2e8f0',
+            }}>
+                <h3 style={{ 
+                    fontSize: '12px', 
+                    fontWeight: 700, 
+                    color: BLUE, 
+                    margin: '0 0 6px 0',
+                }}>
+                    HCP Consent and Disclaimer
+                </h3>
+                <p style={{ 
+                    fontSize: '11px', 
+                    color: '#475569', 
+                    margin: '0 0 8px 0', 
+                    lineHeight: '1.5',
+                }}>
+                    This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information. The content provided herein does not replace professional discretion and should be considered supplementary to established clinical guidelines. Healthcare providers should verify all information against primary literature and current practice standards before application in patient care. Blue Cross Labs assumes no liability for clinical decisions based on this content.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={handleAccept}
+                        style={{
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: BLUE,
+                            background: 'white',
+                            border: `1px solid ${BLUE}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = BLUE_X;
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'white';
+                        }}
+                    >
+                        Accept
+                    </button>
+                    <button
+                        onClick={handleAcceptAll}
+                        style={{
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: 'white',
+                            background: BLUE,
+                            border: `1px solid ${BLUE}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.opacity = '0.9';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                        }}
+                    >
+                        Accept All
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 function parseBold(text: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]*\*\*)/g);
     if (parts.length === 1) return text;
 
     return parts.map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i}>{part.slice(2, -2)}</strong>;
+            return <strong key={i} style={{ color: BLUE }}>{part.slice(2, -2)}</strong>;
         }
         return part;
     });
@@ -486,11 +612,78 @@ function tryRenderCommaProductList(text: string): React.ReactNode | null {
     return <>{elements}</>;
 }
 
-const MessageBubble = ({ msg }: { msg: Message }) => {
+function renderStructuredText(text: string): React.ReactNode {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let key = 0;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            elements.push(<div key={key++} style={{ height: '6px' }} />);
+            continue;
+        }
+
+        const bulletMatch = trimmed.match(/^-\s+(.+)/);
+        if (bulletMatch) {
+            elements.push(
+                <div key={key++} style={{ 
+                    display: 'flex', 
+                    gap: '6px', 
+                    marginTop: '3px',
+                    paddingLeft: '8px',
+                }}>
+                    <span style={{ color: BLUE, fontWeight: 600, flexShrink: 0 }}>•</span>
+                    <span>{parseBold(bulletMatch[1])}</span>
+                </div>
+            );
+            continue;
+        }
+
+        const sectionMatch = trimmed.match(/^\*\*([^*]+)\*\*\s*:?\s*(.*)/);
+        if (sectionMatch) {
+            const sectionTitle = sectionMatch[1];
+            const sectionContent = sectionMatch[2];
+            
+            if (sectionContent) {
+                elements.push(
+                    <div key={key++} style={{ marginTop: '10px', marginBottom: '4px' }}>
+                        <strong style={{ color: BLUE, fontSize: '14px' }}>{sectionTitle}</strong>
+                        <span style={{ color: '#64748b' }}>: {sectionContent}</span>
+                    </div>
+                );
+            } else {
+                elements.push(
+                    <div key={key++} style={{ 
+                        marginTop: '10px', 
+                        marginBottom: '4px',
+                        fontWeight: 700,
+                        color: BLUE,
+                        fontSize: '14px',
+                    }}>
+                        {sectionTitle}
+                    </div>
+                );
+            }
+            continue;
+        }
+
+        elements.push(
+            <div key={key++} style={{ marginTop: '2px' }}>
+                {parseBold(trimmed)}
+            </div>
+        );
+    }
+
+    return <>{elements}</>;
+}
+
+const MessageBubble = ({ msg, messageIndex }: { msg: Message; messageIndex: number }) => {
     const isUser = msg.role === 'user';
     const hasProducts = !isUser && !!msg.products && msg.products.length > 0;
     const hasVideos = !isUser && !!msg.videos && msg.videos.length > 0;
     const hasCitations = !isUser && !!msg.citations && msg.citations.trim().length > 0;
+    const hasPdf = hasCitations && /\bpdf\b/i.test(msg.citations!);
 
     return (
         <div style={{
@@ -513,7 +706,7 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     borderBottomRightRadius: isUser ? '2px' : '14px',
                     borderBottomLeftRadius: !isUser ? '2px' : '14px',
                 }}>
-                    {isUser ? msg.text : renderFormattedText(msg.text)}
+                    {isUser ? msg.text : renderStructuredText(msg.text)}
                 </div>
 
                 {hasProducts && (
@@ -532,7 +725,13 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     </div>
                 )}
 
-                {hasCitations && (
+                {hasCitations && hasPdf && (
+                    <div style={{ paddingLeft: '2px' }}>
+                        <HCPConsentBar citations={msg.citations!} messageId={`msg-${messageIndex}`} />
+                    </div>
+                )}
+
+                {hasCitations && !hasPdf && (
                     <div style={{ paddingLeft: '2px' }}>
                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.03em' }}>
                             SOURCES
@@ -664,7 +863,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     ) : (
                         <>
                             {messages.map((msg, i) => (
-                                <MessageBubble key={i} msg={msg} />
+                                <MessageBubble key={i} msg={msg} messageIndex={i} />
                             ))}
                             {isLoading && <TypingBubble />}
                             <div ref={messagesEndRef} />
