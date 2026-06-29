@@ -28,6 +28,7 @@ from src.core.mongo.client import create_mongo_client, init_session_store
 from src.core.vector_db.client import create_qdrant_client
 from src.services.chat.service import ChatService
 from src.services.chunking.service import ChunkingService
+from src.services.config.service import ConfigService
 from src.services.embedding.errors import EmbeddingError
 from src.services.embedding.openai_provider import OpenAIEmbeddingProvider
 from src.services.feedback.service import FeedbackService
@@ -38,6 +39,7 @@ from src.services.llm.errors import LLMError
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
 from src.services.vectorstore.service import VectorAdminService
+from src.storage.mongo.config import ConfigRepository
 from src.storage.mongo.feedback import FeedbackRepository
 from src.storage.mongo.session import SessionRepository
 from src.storage.qdrant.repository import QdrantRepository
@@ -109,6 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.mongo_client = None
     app.state.chat_service = None
     app.state.feedback_service = None
+    app.state.config_service = None
     app.state.chat_unavailable_reason = None
 
     # Best-effort collection bootstrap; readiness probe reflects actual health.
@@ -130,8 +133,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 llm=llm,
                 sessions=SessionRepository(),
                 settings=settings,
+                config=ConfigRepository(),
             )
             app.state.feedback_service = FeedbackService(FeedbackRepository())
+            app.state.config_service = ConfigService(ConfigRepository())
             logger.info("mongo_session_store_ready", database=settings.mongodb_db)
         except Exception as exc:  # noqa: BLE001
             logger.exception("mongo_init_failed", error=str(exc))

@@ -65,10 +65,7 @@ const DisclaimerModal: React.FC<DisclaimerModalProps> = ({ onAccept, onReject })
 
                     <hr className="my-6 border-slate-200" />
 
-                    <h3 className="font-bold text-slate-800 mb-2">HCP Consent and Disclaimer</h3>
-                    <p>
-                        This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information. The content provided herein does not replace professional discretion and should be considered supplementary to established clinical guidelines. Healthcare providers should verify all information against primary literature and current practice standards before application in patient care. Blue Cross Labs assumes no liability for clinical decisions based on this content.
-                    </p>
+                    
                 </div>
 
                 {/* Buttons */}

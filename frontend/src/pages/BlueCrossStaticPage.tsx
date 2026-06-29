@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { BlueCrossUI } from '@/components/livekit_bank/bluecross/BlueCrossUI';
 import { X, MessageSquare, Send, ExternalLink } from 'lucide-react';
 import DisclaimerModal from '@/components/DisclaimerModal';
-
+ 
 const BLUE   = '#1B3D8F';
 const BLUE_L = '#3A6BC4';
 const BLUE_X = '#EEF3FB';
 // const API_URL = 'https://nearly-pierre-cord-syndication.trycloudflare.com/api/v1/chat';
 const API_URL = 'http://localhost:8000/api/v1/chat';
-
+ 
 interface Video {
     title: string;
     video_url: string;
@@ -19,7 +19,7 @@ interface Video {
     page_url: string;
     score: number;
 }
-
+ 
 interface Product {
     product_name: string;
     category: string;
@@ -28,7 +28,7 @@ interface Product {
     page_url: string;
     score: number;
 }
-
+ 
 interface Message {
     role: 'user' | 'bot';
     text: string;
@@ -36,16 +36,16 @@ interface Message {
     videos?: Video[];
     citations?: string;
 }
-
+ 
 // Add a generic placeholder URL (you can replace this with a local asset like '/assets/default-medicine.png')
 const FALLBACK_IMAGE = 'https://placehold.co/120x120/EEF3FB/1B3D8F?text=Rx';
-
+ 
 const ProductCard = ({ products }: { products: Product }) => {
     // 1. Wrap the original URL in the proxy URL
     const proxiedImageUrl = products.image_url 
         ? `https://wsrv.nl/?url=${encodeURIComponent(products.image_url)}` 
         : FALLBACK_IMAGE;
-
+ 
     return (
         <a
             href={products.page_url}
@@ -93,31 +93,31 @@ const ProductCard = ({ products }: { products: Product }) => {
         </a>
     );
 };
-
+ 
 const VideoCard = ({ video }: { video: Video }) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const clickCountRef = useRef(0);
     const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-
+ 
     const isYouTubeUrl = (url: string): boolean => {
         return /(?:youtube\.com|youtu\.be)/.test(url);
     };
-
+ 
     const extractYouTubeId = (url: string): string | null => {
         const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|shorts\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
         return match ? match[1] : null;
     };
-
+ 
     const isDirectVideo = (url: string): boolean => {
         return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
     };
-
+ 
     const youtubeId = isYouTubeUrl(video.video_url) ? extractYouTubeId(video.video_url) : null;
     const isDirect = isDirectVideo(video.video_url);
-
+ 
     const handleClick = () => {
         clickCountRef.current += 1;
-
+ 
         if (clickCountRef.current === 1) {
             clickTimerRef.current = setTimeout(() => {
                 if (clickCountRef.current === 1) {
@@ -131,13 +131,13 @@ const VideoCard = ({ video }: { video: Video }) => {
             clickCountRef.current = 0;
         }
     };
-
+ 
     useEffect(() => {
         return () => {
             if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
         };
     }, []);
-
+ 
     if (isPlaying) {
         return (
             <div style={{
@@ -194,7 +194,7 @@ const VideoCard = ({ video }: { video: Video }) => {
             </div>
         );
     }
-
+ 
     return (
         <div
             onClick={handleClick}
@@ -305,13 +305,13 @@ const VideoCard = ({ video }: { video: Video }) => {
         </div>
     );
 };
-
+ 
 const CitationBar = ({ citations }: { citations: string }) => {
     const links = citations
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-
+ 
     return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '7px' }}>
             {links.map((url, i) => {
@@ -355,45 +355,237 @@ const CitationBar = ({ citations }: { citations: string }) => {
         </div>
     );
 };
-
+ 
+const HCPConsentBar = ({ citations, messageId }: { citations: string; messageId: string }) => {
+    const [accepted, setAccepted] = useState(false);
+    const [acceptedAll, setAcceptedAll] = useState(() => {
+        return localStorage.getItem('hcp_consent_accepted_all') === 'true';
+    });
+ 
+    const links = citations
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s && s.toLowerCase() !== 'pdf');
+ 
+    useEffect(() => {
+        if (acceptedAll) {
+            setAccepted(true);
+        }
+    }, [acceptedAll]);
+ 
+    const handleAccept = () => {
+        setAccepted(true);
+    };
+ 
+    const handleAcceptAll = () => {
+        localStorage.setItem('hcp_consent_accepted_all', 'true');
+        setAcceptedAll(true);
+        setAccepted(true);
+    };
+ 
+    if (accepted) {
+        return (
+            <div style={{ marginTop: '8px' }}>
+                <div style={{ 
+                    padding: '8px 10px', 
+                    background: '#f0f9ff', 
+                    borderRadius: '6px', 
+                    border: `1px solid ${BLUE_L}30`,
+                    marginBottom: '6px',
+                }}>
+                    <p style={{ fontSize: '10px', color: '#64748b', margin: 0, lineHeight: '1.4' }}>
+                        <strong style={{ color: BLUE }}>HCP Consent and Disclaimer</strong>
+                    </p>
+                    <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: '3px 0 0 0', lineHeight: '1.4' }}>
+                        This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information.
+                    </p>
+                </div>
+                {links.length > 0 && (
+                    <CitationBar citations={links.join(', ')} />
+                )}
+            </div>
+        );
+    }
+ 
+    return (
+        <div style={{ marginTop: '8px' }}>
+            <div style={{ 
+                padding: '10px 12px', 
+                background: '#f8fafc', 
+                borderRadius: '8px', 
+                border: '1px solid #e2e8f0',
+            }}>
+                <h3 style={{ 
+                    fontSize: '12px', 
+                    fontWeight: 700, 
+                    color: BLUE, 
+                    margin: '0 0 6px 0',
+                }}>
+                    HCP Consent and Disclaimer
+                </h3>
+                <p style={{ 
+                    fontSize: '11px', 
+                    color: '#475569', 
+                    margin: '0 0 8px 0', 
+                    lineHeight: '1.5',
+                }}>
+                    This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information. The content provided herein does not replace professional discretion and should be considered supplementary to established clinical guidelines. Healthcare providers should verify all information against primary literature and current practice standards before application in patient care. Blue Cross Labs assumes no liability for clinical decisions based on this content.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                        onClick={handleAccept}
+                        style={{
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: BLUE,
+                            background: 'white',
+                            border: `1px solid ${BLUE}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = BLUE_X;
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'white';
+                        }}
+                    >
+                        Accept
+                    </button>
+                    <button
+                        onClick={handleAcceptAll}
+                        style={{
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: 'white',
+                            background: BLUE,
+                            border: `1px solid ${BLUE}`,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.opacity = '0.9';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                        }}
+                    >
+                        Accept All
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+ 
 function parseBold(text: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]*\*\*)/g);
     if (parts.length === 1) return text;
-
+ 
     return parts.map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i}>{part.slice(2, -2)}</strong>;
+            return <strong key={i} style={{ color: BLUE }}>{part.slice(2, -2)}</strong>;
         }
         return part;
     });
 }
-
+ 
+function renderStructuredText(text: string): React.ReactNode {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let key = 0;
+ 
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            elements.push(<div key={key++} style={{ height: '6px' }} />);
+            continue;
+        }
+ 
+        const bulletMatch = trimmed.match(/^-\s+(.+)/);
+        if (bulletMatch) {
+            elements.push(
+                <div key={key++} style={{ 
+                    display: 'flex', 
+                    gap: '6px', 
+                    marginTop: '3px',
+                    paddingLeft: '8px',
+                }}>
+                    <span style={{ color: BLUE, fontWeight: 600, flexShrink: 0 }}>•</span>
+                    <span>{parseBold(bulletMatch[1])}</span>
+                </div>
+            );
+            continue;
+        }
+ 
+        const sectionMatch = trimmed.match(/^\*\*([^*]+)\*\*\s*:?\s*(.*)/);
+        if (sectionMatch) {
+            const sectionTitle = sectionMatch[1];
+            const sectionContent = sectionMatch[2];
+            
+            if (sectionContent) {
+                elements.push(
+                    <div key={key++} style={{ marginTop: '10px', marginBottom: '4px' }}>
+                        <strong style={{ color: BLUE, fontSize: '14px' }}>{sectionTitle}</strong>
+                        <span style={{ color: '#64748b' }}>: {sectionContent}</span>
+                    </div>
+                );
+            } else {
+                elements.push(
+                    <div key={key++} style={{ 
+                        marginTop: '10px', 
+                        marginBottom: '4px',
+                        fontWeight: 700,
+                        color: BLUE,
+                        fontSize: '14px',
+                    }}>
+                        {sectionTitle}
+                    </div>
+                );
+            }
+            continue;
+        }
+ 
+        elements.push(
+            <div key={key++} style={{ marginTop: '2px' }}>
+                {parseBold(trimmed)}
+            </div>
+        );
+    }
+ 
+    return <>{elements}</>;
+}
+ 
 function renderFormattedText(text: string): React.ReactNode {
     const numberedItems = text.match(/\d+\.\s+/g);
     if (numberedItems && numberedItems.length >= 2) {
         return renderNumberedList(text);
     }
-
+ 
     const boldItems = [...text.matchAll(/\*\*[^*]+\*\*/g)];
     if (boldItems.length >= 2 && isBoldProductList(text, boldItems)) {
         return renderBoldProductList(text, boldItems);
     }
-
+ 
     const commaList = tryRenderCommaProductList(text);
     if (commaList) return commaList;
-
+ 
     return <>{parseBold(text)}</>;
 }
-
+ 
 function renderNumberedList(text: string): React.ReactNode {
     const parts = text.split(/(\d+\.\s+)/);
     const elements: React.ReactNode[] = [];
     let key = 0;
-
+ 
     if (parts[0]) {
         elements.push(<span key={key++}>{parseBold(parts[0])}</span>);
     }
-
+ 
     for (let i = 1; i < parts.length; i += 2) {
         const content = parts[i + 1] || '';
         elements.push(
@@ -402,10 +594,10 @@ function renderNumberedList(text: string): React.ReactNode {
             </div>
         );
     }
-
+ 
     return <>{elements}</>;
 }
-
+ 
 function isBoldProductList(text: string, matches: RegExpMatchArray[]): boolean {
     for (let i = 0; i < matches.length - 1; i++) {
         const after = text.slice(matches[i].index! + matches[i][0].length, matches[i + 1].index!).trim();
@@ -415,16 +607,16 @@ function isBoldProductList(text: string, matches: RegExpMatchArray[]): boolean {
     }
     return true;
 }
-
+ 
 function renderBoldProductList(text: string, matches: RegExpMatchArray[]): React.ReactNode {
     const elements: React.ReactNode[] = [];
     let key = 0;
-
+ 
     const intro = text.slice(0, matches[0].index!).trim();
     if (intro) {
         elements.push(<div key={key++} style={{ marginBottom: '4px' }}>{parseBold(intro)}</div>);
     }
-
+ 
     for (let i = 0; i < matches.length; i++) {
         const start = matches[i].index!;
         const end = i < matches.length - 1 ? matches[i + 1].index! : text.length;
@@ -433,31 +625,31 @@ function renderBoldProductList(text: string, matches: RegExpMatchArray[]): React
             elements.push(<div key={key++} style={{ marginTop: '2px' }}>{parseBold(segment)}</div>);
         }
     }
-
+ 
     return <>{elements}</>;
 }
-
+ 
 function tryRenderCommaProductList(text: string): React.ReactNode | null {
     const productRegex = /[A-Z][a-z]+(?:\s+[A-Z][A-Za-z]*)+/g;
     const matches = [...text.matchAll(productRegex)];
-
+ 
     if (matches.length < 3) return null;
-
+ 
     for (let i = 0; i < matches.length - 1; i++) {
         const after = text.slice(matches[i].index! + matches[i][0].length, matches[i + 1].index!);
         if (!/^,\s*$/.test(after) && !/^\s+and\s+/i.test(after)) {
             return null;
         }
     }
-
+ 
     const elements: React.ReactNode[] = [];
     let key = 0;
-
+ 
     const intro = text.slice(0, matches[0].index!).trim();
     if (intro) {
         elements.push(<div key={key++} style={{ marginBottom: '4px' }}>{intro}</div>);
     }
-
+ 
     for (let i = 0; i < matches.length; i++) {
         const start = matches[i].index!;
         const end = i < matches.length - 1 ? matches[i + 1].index! : text.length;
@@ -466,16 +658,17 @@ function tryRenderCommaProductList(text: string): React.ReactNode | null {
             elements.push(<div key={key++} style={{ marginTop: '2px' }}>{segment}</div>);
         }
     }
-
+ 
     return <>{elements}</>;
 }
-
-const MessageBubble = ({ msg }: { msg: Message }) => {
+ 
+const MessageBubble = ({ msg, messageIndex }: { msg: Message; messageIndex: number }) => {
     const isUser = msg.role === 'user';
     const hasProducts = !isUser && !!msg.products && msg.products.length > 0;
     const hasVideos = !isUser && !!msg.videos && msg.videos.length > 0;
     const hasCitations = !isUser && !!msg.citations && msg.citations.trim().length > 0;
-
+    const hasPdf = hasCitations && /\bpdf\b/i.test(msg.citations!);
+ 
     return (
         <div style={{
             display: 'flex',
@@ -497,9 +690,9 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                     borderBottomRightRadius: isUser ? '2px' : '14px',
                     borderBottomLeftRadius: !isUser ? '2px' : '14px',
                 }}>
-                    {isUser ? msg.text : renderFormattedText(msg.text)}
+                    {isUser ? msg.text : renderStructuredText(msg.text)}
                 </div>
-
+ 
                 {hasProducts && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
                         {msg.products!.map((p, i) => (
@@ -507,7 +700,7 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                         ))}
                     </div>
                 )}
-
+ 
                 {hasVideos && (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
                         {msg.videos!.map((v, i) => (
@@ -515,8 +708,14 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
                         ))}
                     </div>
                 )}
-
-                {hasCitations && (
+ 
+                {hasCitations && hasPdf && (
+                    <div style={{ paddingLeft: '2px' }}>
+                        <HCPConsentBar citations={msg.citations!} messageId={`msg-${messageIndex}`} />
+                    </div>
+                )}
+ 
+                {hasCitations && !hasPdf && (
                     <div style={{ paddingLeft: '2px' }}>
                         <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.03em' }}>
                             SOURCES
@@ -528,7 +727,7 @@ const MessageBubble = ({ msg }: { msg: Message }) => {
         </div>
     );
 };
-
+ 
 const TypingBubble = () => (
     <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '10px' }}>
         <div style={{
@@ -558,45 +757,45 @@ const TypingBubble = () => (
         </div>
     </div>
 );
-
+ 
 const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [inputText, setInputText] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-
+ 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading]);
-
+ 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         const text = inputText.trim();
         if (!text || isLoading) return;
-
+ 
         setMessages((prev) => [...prev, { role: 'user', text }]);
         setInputText('');
         setIsLoading(true);
-
+ 
         try {
             const payload: Record<string, unknown> = { message: text, top_k: 20 };
             if (sessionId) payload.session_id = sessionId;
-
+ 
             const res = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', accept: 'application/json' },
                 body: JSON.stringify(payload),
             });
-
+ 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
+ 
             const data = await res.json();
-
+ 
             if (data.session?.session_id && !sessionId) {
                 setSessionId(data.session.session_id);
             }
-
+ 
             setMessages((prev) => [...prev, {
                 role: 'bot',
                 text: data.answer ?? 'Sorry, I could not get a response. Please try again.',
@@ -613,7 +812,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             setIsLoading(false);
         }
     };
-
+ 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
             <div
@@ -638,7 +837,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     </button>
                 </div>
                 
-
+ 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 bg-slate-50/50">
                     {messages.length === 0 && !isLoading ? (
@@ -649,14 +848,14 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     ) : (
                         <>
                             {messages.map((msg, i) => (
-                                <MessageBubble key={i} msg={msg} />
+                                <MessageBubble key={i} msg={msg} messageIndex={i} />
                             ))}
                             {isLoading && <TypingBubble />}
                             <div ref={messagesEndRef} />
                         </>
                     )}
                 </div>
-
+ 
                 {/* Input */}
                 <div className="p-4 bg-white border-t border-slate-100 shrink-0">
                     <form onSubmit={handleSend} className="flex items-center gap-3">
@@ -679,7 +878,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     </form>
                 </div>
             </div>
-
+ 
             <style>{`
                 @keyframes slideIn {
                     from { opacity: 0; transform: translateY(10px); }
@@ -693,7 +892,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
     );
 };
-
+ 
 export default function BlueCrossStaticPage({
     authUser,
     onSignOut,
@@ -704,23 +903,23 @@ export default function BlueCrossStaticPage({
     const navigate = useNavigate();
     const [showDisclaimer, setShowDisclaimer] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
-
+ 
     const openChatFlow = () => {
         setShowDisclaimer(true);
     };
-
+ 
     const handleAccept = () => {
         setShowDisclaimer(false);
         setTimeout(() => {
             setChatOpen(true);
         }, 0);
     };
-
+ 
     const handleReject = () => {
         setShowDisclaimer(false);
         navigate('/blue_cross/chat');
     };
-
+ 
     return (
         <div style={{ height: '100vh' }}>
             <BlueCrossUI authUser={authUser} timeLeft="" onBack={() => navigate('/blue_cross')}>
