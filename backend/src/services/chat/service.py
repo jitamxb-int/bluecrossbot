@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from src.api.models.chat import (
     ChatCountResponse,
@@ -38,9 +38,16 @@ from src.core.config import Settings
 from src.core.logging.setup import get_logger
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
+from src.storage.mongo.config import ConfigRepository
 from src.storage.mongo.session import SessionRepository
 
 logger = get_logger(__name__)
+
+# Returned (HTTP 200) when a message targets a session past its max duration.
+SESSION_EXPIRED_MESSAGE = (
+    "Maximum chat session duration has been reached. "
+    "Please create a new session by refreshing the page."
+)
 _SYSTEM_INSTRUCTIONS = (
     # ── ROLE ──────────────────────────────────────────────────────────
     "You are a helpful assistant for Blue Cross Laboratories.\n\n"
@@ -126,11 +133,13 @@ class ChatService:
         llm: OpenAIChatProvider,
         sessions: SessionRepository,
         settings: Settings,
+        config: ConfigRepository,
     ) -> None:
         self._retrieval = retrieval
         self._llm = llm
         self._sessions = sessions
         self._settings = settings
+        self._config = config
 
     async def chat_count_metrics(
         self,
@@ -158,8 +167,10 @@ class ChatService:
         start_date: datetime | None = None,
         end_date: datetime | None = None,
     ) -> ChatSessionListResponse:
-        # Auto-expire idle sessions before listing so the status reflects current state.
-        await self._sessions.deactivate_stale()
+        # Auto-expire idle / over-duration sessions before listing so the status
+        # reflects current state (max duration is the primary rule).
+        max_minutes = await self._config.get_max_session_duration_minutes()
+        await self._sessions.deactivate_stale(timedelta(minutes=max_minutes))
         total, sessions = await self._sessions.list_sessions(
             limit=limit,
             offset=offset,
@@ -203,11 +214,45 @@ class ChatService:
         # 1. LOAD. An unrecognised id (e.g. a stale one from the frontend) is treated
         #    as a brand-new conversation: mint a fresh id and start clean. The frontend
         #    replaces its stale id with the one echoed back in the response.
-        found, chat_history, summary = await self._sessions.get_history(session_id)
-        if request.session_id and not found:
+        session = await self._sessions.get_session(session_id)
+        if request.session_id and session is None:
             logger.info("chat_session_replaced", stale_session_id=session_id)
             session_id = uuid.uuid4().hex
-            chat_history, summary = [], None
+            session = None
+
+        # 1a. MAX-DURATION GATE (primary rule). A known session older than the
+        #     configured maximum is expired: mark it inactive and reject the
+        #     message without running retrieval/LLM. The user must start a new
+        #     session (refresh → no session_id → fresh conversation).
+        if session is not None:
+            max_minutes = await self._config.get_max_session_duration_minutes()
+            started = session.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=UTC)
+            if request_started_at - started >= timedelta(minutes=max_minutes):
+                if session.is_active:
+                    await self._sessions.mark_inactive(session_id)
+                logger.info(
+                    "chat_session_expired",
+                    session_id=session_id,
+                    max_session_duration_minutes=max_minutes,
+                )
+                return ChatResponse(
+                    answer=SESSION_EXPIRED_MESSAGE,
+                    session=SessionInfo(
+                        session_id=session.session_id,
+                        started_at=session.started_at,
+                        ended_at=session.ended_at,
+                        duration_seconds=session.duration_seconds,
+                        is_active=False,
+                    ),
+                    citations="",
+                    products=[],
+                    videos=[],
+                )
+
+        chat_history = session.chat_json if session is not None else []
+        summary = session.conversation_summary if session is not None else None
 
         # 2. Rewrite for retrieval only (raw query is what we store/show).
         standalone = await self._llm.rewrite_standalone(request.message, summary, chat_history)

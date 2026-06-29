@@ -49,6 +49,7 @@ const navItems = [
   // { path: '/upcoming', label: 'Upcoming Calls', icon: PhoneIncoming }, // Preserved this link
   { path: '/sessions', label: 'Session Logs', icon: Phone },
   { path: '/ai-feedback-log', label: 'AI Feedback Log', icon: Briefcase }, // New Link
+  { path: '/session-config', label: 'Session Config', icon: Clock },
 ];
 
 const AdminLayout = ({ children }: AdminLayoutProps) => {

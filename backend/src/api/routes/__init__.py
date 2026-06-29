@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from src.api.routes import chat, feedback, health, ingestion, product, retrieval, vectors, video
+from src.api.routes import (
+    chat,
+    config,
+    feedback,
+    health,
+    ingestion,
+    product,
+    retrieval,
+    vectors,
+    video,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(config.router)
 api_router.include_router(ingestion.router)
 api_router.include_router(product.router)
 api_router.include_router(video.router)

@@ -5,6 +5,7 @@ import DashboardPage from '../pages/Dashboard';
 import Sessions from '../pages/Sessions';
 import TranscriptPage from '../pages/TranscriptPage';
 import FeedbackLogs from '../pages/FeedbackLogs';
+import SessionConfigPage from '../pages/SessionConfigPage';
 // import ProductsPage       from '../pages/Products/ProductsPage';
 // import ProductIngestPage  from '../pages/Products/ProductIngestPage';
 // import VideosPage         from '../pages/Videos/VideosPage';
@@ -21,6 +22,7 @@ const AppRoutes: React.FC = () => (
     <Route path={ROUTES.SESSIONS} element={<Sessions />} />
     <Route path={ROUTES.TRANSCRIPT} element={<TranscriptPage />} />
     <Route path={ROUTES.FEEDBACK_LOGS} element={<FeedbackLogs />} />
+    <Route path={ROUTES.SESSION_CONFIG} element={<SessionConfigPage />} />
     <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
     {/* <Route path={ROUTES.PRODUCTS}        element={<ProductsPage />} />
     <Route path={ROUTES.PRODUCT_INGEST}  element={<ProductIngestPage />} />
