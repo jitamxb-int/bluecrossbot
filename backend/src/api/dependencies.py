@@ -12,6 +12,7 @@ from fastapi import HTTPException, Request, status
 from src.services.chat.service import ChatService
 from src.services.config.service import ConfigService
 from src.services.feedback.service import FeedbackService
+from src.services.ingestion.pi_pil_service import PiPilIngestionService
 from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
@@ -33,6 +34,10 @@ def get_product_ingestion_service(request: Request) -> ProductIngestionService:
 
 def get_video_ingestion_service(request: Request) -> VideoIngestionService:
     return request.app.state.video_ingestion_service
+
+
+def get_pi_pil_ingestion_service(request: Request) -> PiPilIngestionService:
+    return request.app.state.pi_pil_ingestion_service
 
 
 def get_retrieval_service(request: Request) -> RetrievalService:

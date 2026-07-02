@@ -2,6 +2,7 @@ import UploadLayout from '../components/layout/UploadLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import FileUploader from '../components/upload/FileUploader';
+import PdfUploader from '../components/upload/PdfUploader';
 
 const UploadPage = () => {
   return (
@@ -35,10 +36,7 @@ const UploadPage = () => {
               </TabsContent>
 
               <TabsContent value="pdf" className="mt-6">
-                <FileUploader
-                  kind="pdf"
-                  description="PDF-derived .txt files. Processed exactly like descriptive content (chunked, embedded), but stored with source_url='pdf'."
-                />
+                <PdfUploader />
               </TabsContent>
 
               <TabsContent value="product" className="mt-6">

@@ -52,6 +52,39 @@ export type RawIngestResponse =
   | ProductIngestResponse
   | VideoIngestResponse;
 
+/** One PI or PIL document ingested via POST /ingest/pdf. */
+export interface PdfDocumentResult {
+  document_id: string;
+  document_name: string;
+  pdf_type: 'PI' | 'PIL';
+  product_name: string;
+  product_key: string;
+  division: string;
+  linked_document_id?: string | null;
+  chunk_count: number;
+}
+
+/** A linked PI + PIL pair recognized during ingestion. */
+export interface PdfPair {
+  product_key: string;
+  product_name: string;
+  pi_document_id?: string | null;
+  pil_document_id?: string | null;
+}
+
+/** Raw shape of POST /ingest/pdf (PI/PIL ingestion). */
+export interface PdfIngestResponse {
+  collection: string;
+  embedding_model: string;
+  division: string;
+  total_documents: number;
+  total_chunks: number;
+  documents: PdfDocumentResult[];
+  pairs: PdfPair[];
+  files_skipped: number;
+  skipped_files: SkippedFile[];
+}
+
 /** Normalized summary so the three differing responses render through one component. */
 export interface UploadSummary {
   collection: string;

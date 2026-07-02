@@ -32,6 +32,7 @@ from src.services.config.service import ConfigService
 from src.services.embedding.errors import EmbeddingError
 from src.services.embedding.openai_provider import OpenAIEmbeddingProvider
 from src.services.feedback.service import FeedbackService
+from src.services.ingestion.pi_pil_service import PiPilIngestionService
 from src.services.ingestion.product_service import ProductIngestionService
 from src.services.ingestion.service import IngestionService
 from src.services.ingestion.video_service import VideoIngestionService
@@ -95,6 +96,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         repository=repository,
         settings=settings,
     )
+    pi_pil_ingestion_service = PiPilIngestionService(
+        chunking=ChunkingService(),
+        embedding=embedding,
+        repository=repository,
+        settings=settings,
+    )
     retrieval_service = RetrievalService(embedding, repository, settings)
     vector_admin_service = VectorAdminService(repository, settings)
     llm = OpenAIChatProvider(settings)
@@ -106,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ingestion_service = ingestion_service
     app.state.product_ingestion_service = product_ingestion_service
     app.state.video_ingestion_service = video_ingestion_service
+    app.state.pi_pil_ingestion_service = pi_pil_ingestion_service
     app.state.retrieval_service = retrieval_service
     app.state.llm = llm
     app.state.mongo_client = None
