@@ -7,8 +7,9 @@ import DisclaimerModal from '@/components/DisclaimerModal';
 const BLUE   = '#1B3D8F';
 const BLUE_L = '#3A6BC4';
 const BLUE_X = '#EEF3FB';
-// const API_URL = 'https://nearly-pierre-cord-syndication.trycloudflare.com/api/v1/chat';
-const API_URL = 'http://localhost:8000/api/v1/chat';
+// Backend base URL comes from the .env (VITE_API_URL); falls back to localhost for dev.
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = `${API_BASE}/api/v1/chat`;
  
 interface Video {
     title: string;

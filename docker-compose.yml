@@ -10,3 +10,33 @@ services:
       - "4020:4020"
     volumes:
       - ./logs:/app/logs
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: bluecross_frontend
+    env_file: frontend/.env
+    ports:
+      - "4021:80"
+
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: admin-frontend
+    container_name: bluecross_admin_frontend
+    env_file: admin-frontend/.env
+    ports:
+      - "4022:80"
+
+  upload-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: upload-frontend
+    container_name: bluecross_upload_frontend
+    env_file: upload-frontend/.env
+    ports:
+      - "4023:80"
