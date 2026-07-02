@@ -4,6 +4,7 @@ import type {
   DeleteByDocumentResponse,
   DocumentField,
   IngestKind,
+  PdfIngestResponse,
   RawIngestResponse,
 } from '../../types/ingest.types';
 
@@ -26,6 +27,25 @@ export async function ingestFiles(
     if (opts.chunkOverlap !== undefined) form.append('chunk_overlap', String(opts.chunkOverlap));
   }
   return request<RawIngestResponse>(`/ingest/${kind}`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
+/** Upload PI + PIL .txt files (with a division) to the PI/PIL pipeline. */
+export async function ingestPdf(
+  piFiles: File[],
+  pilFiles: File[],
+  division: string,
+  opts: IngestOptions = {},
+): Promise<PdfIngestResponse> {
+  const form = new FormData();
+  piFiles.forEach((file) => form.append('pi_files', file));
+  pilFiles.forEach((file) => form.append('pil_files', file));
+  form.append('division', division);
+  if (opts.chunkSize !== undefined) form.append('chunk_size', String(opts.chunkSize));
+  if (opts.chunkOverlap !== undefined) form.append('chunk_overlap', String(opts.chunkOverlap));
+  return request<PdfIngestResponse>('/ingest/pdf', {
     method: 'POST',
     body: form,
   });

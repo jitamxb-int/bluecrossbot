@@ -68,3 +68,41 @@ class IngestResponse(BaseModel):
     documents: list[DocumentIngestResult] = Field(default_factory=list)
     files_skipped: int = Field(default=0, ge=0)
     skipped_files: list[SkippedFile] = Field(default_factory=list)
+
+
+class PdfDocumentResult(BaseModel):
+    """Per-document summary of a PI/PIL ingestion run."""
+
+    document_id: str
+    document_name: str
+    pdf_type: str = Field(..., description="'PI' or 'PIL'.")
+    product_name: str
+    product_key: str = Field(..., description="Normalized key used to link PI with PIL.")
+    division: str
+    linked_document_id: str | None = Field(
+        default=None, description="document_id of the paired PI/PIL document, if any."
+    )
+    chunk_count: int = Field(..., ge=0)
+
+
+class PdfPair(BaseModel):
+    """A linked PI + PIL pair recognized during ingestion."""
+
+    product_key: str
+    product_name: str
+    pi_document_id: str | None = None
+    pil_document_id: str | None = None
+
+
+class PdfIngestResponse(BaseModel):
+    """Response returned by ``POST /ingest/pdf`` (PI/PIL ingestion)."""
+
+    collection: str
+    embedding_model: str
+    division: str
+    total_documents: int = Field(..., ge=0)
+    total_chunks: int = Field(..., ge=0)
+    documents: list[PdfDocumentResult] = Field(default_factory=list)
+    pairs: list[PdfPair] = Field(default_factory=list)
+    files_skipped: int = Field(default=0, ge=0)
+    skipped_files: list[SkippedFile] = Field(default_factory=list)

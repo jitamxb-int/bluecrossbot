@@ -36,8 +36,17 @@ _DISTANCE_MAP: dict[str, Distance] = {
 }
 
 # Provenance fields indexed as keywords to enable metadata filtering on retrieval.
-# ``doc_type`` lets retrieval filter between 'descriptive' and 'product' records.
-_INDEXED_PAYLOAD_FIELDS = ("source_url", "document_id", "document_name", "doc_type")
+# ``doc_type`` lets retrieval filter between 'descriptive' and 'product' records;
+# ``pdf_type`` / ``product_key`` / ``division`` enable scoped PI vs PIL retrieval.
+_INDEXED_PAYLOAD_FIELDS = (
+    "source_url",
+    "document_id",
+    "document_name",
+    "doc_type",
+    "pdf_type",
+    "product_key",
+    "division",
+)
 
 
 def _resolve_distance(distance: str) -> Distance:
@@ -67,10 +76,29 @@ class QdrantRepository:
         vector_size: int | None = None,
         distance: str | None = None,
     ) -> None:
-        """Create the collection (and payload indexes) if it does not exist."""
+        """Create the collection (and payload indexes) if it does not exist.
+
+        If the collection already exists, still (idempotently) ensure the payload
+        indexes are present — collections created before new indexed fields were
+        added would otherwise miss them (e.g. product_key / pdf_type for scoped
+        PI/PIL retrieval).
+        """
         if await self._client.collection_exists(name):
+            await self._ensure_payload_indexes(name)
             return
         await self.create_collection(name, vector_size, distance)
+
+    async def _ensure_payload_indexes(self, name: str) -> None:
+        """Create each indexed payload field; re-creating an existing index is a no-op."""
+        for field in _INDEXED_PAYLOAD_FIELDS:
+            try:
+                await self._client.create_payload_index(
+                    collection_name=name,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+            except Exception as exc:  # noqa: BLE001 - index may already exist
+                logger.debug("payload_index_exists_or_failed", field=field, error=str(exc))
 
     async def create_collection(
         self,
@@ -85,12 +113,7 @@ class QdrantRepository:
             collection_name=name,
             vectors_config=VectorParams(size=size, distance=metric),
         )
-        for field in _INDEXED_PAYLOAD_FIELDS:
-            await self._client.create_payload_index(
-                collection_name=name,
-                field_name=field,
-                field_schema=PayloadSchemaType.KEYWORD,
-            )
+        await self._ensure_payload_indexes(name)
         logger.info("collection_created", collection=name, vector_size=size, distance=metric.value)
 
     async def upsert_points(self, name: str, points: list[PointStruct]) -> int:

@@ -59,18 +59,28 @@ class SessionInfo(BaseModel):
     ended_at: datetime | None = None
     duration_seconds: float = 0.0
     is_active: bool = True
+    hcp_consent: bool = Field(
+        default=False,
+        description="Whether HCP consent has been granted for this session.",
+    )
+
+
+class HcpConsentRequest(BaseModel):
+    """Request to grant HCP consent for a session."""
+
+    session_id: str = Field(..., description="The session to grant HCP consent for.")
 
 
 class ChatResponse(BaseModel):
     """RAG chat response."""
 
+    citations: str = Field(
+    default="",
+    description="Comma-separated, deduped page URLs the answer is grounded in "
+    "(descriptive source_urls + referenced product/video page_urls).",
+)
     answer: str
     session: SessionInfo
-    citations: str = Field(
-        default="",
-        description="Comma-separated, deduped page URLs the answer is grounded in "
-        "(descriptive source_urls + referenced product/video page_urls).",
-    )
     products: list[ProductReference] = Field(default_factory=list)
     videos: list[VideoReference] = Field(default_factory=list)
 

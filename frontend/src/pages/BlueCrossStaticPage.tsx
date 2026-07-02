@@ -35,6 +35,12 @@ interface Message {
     products?: Product[];
     videos?: Video[];
     citations?: string;
+    // HCP consent: decided at stream start (from the backend `requires_consent`
+    // flag) so the message can blur from its very first token.
+    hcpGated?: boolean;
+    // Set when the user explicitly denies consent for this gated message. The
+    // message stays blurred but its overlay prompt is dismissed.
+    denied?: boolean;
 }
  
 // Add a generic placeholder URL (you can replace this with a local asset like '/assets/default-medicine.png')
@@ -356,106 +362,68 @@ const CitationBar = ({ citations }: { citations: string }) => {
     );
 };
  
-const HCPConsentBar = ({ citations, messageId }: { citations: string; messageId: string }) => {
-    const [accepted, setAccepted] = useState(false);
-    const [acceptedAll, setAcceptedAll] = useState(() => {
-        return localStorage.getItem('hcp_consent_accepted_all') === 'true';
-    });
- 
-    const links = citations
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s && s.toLowerCase() !== 'pdf');
- 
-    useEffect(() => {
-        if (acceptedAll) {
-            setAccepted(true);
-        }
-    }, [acceptedAll]);
- 
-    const handleAccept = () => {
-        setAccepted(true);
-    };
- 
-    const handleAcceptAll = () => {
-        localStorage.setItem('hcp_consent_accepted_all', 'true');
-        setAcceptedAll(true);
-        setAccepted(true);
-    };
- 
-    if (accepted) {
-        return (
-            <div style={{ marginTop: '8px' }}>
-                <div style={{ 
-                    padding: '8px 10px', 
-                    background: '#f0f9ff', 
-                    borderRadius: '6px', 
-                    border: `1px solid ${BLUE_L}30`,
-                    marginBottom: '6px',
-                }}>
-                    <p style={{ fontSize: '10px', color: '#64748b', margin: 0, lineHeight: '1.4' }}>
-                        <strong style={{ color: BLUE }}>HCP Consent and Disclaimer</strong>
-                    </p>
-                    <p style={{ fontSize: '9.5px', color: '#94a3b8', margin: '3px 0 0 0', lineHeight: '1.4' }}>
-                        This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information.
-                    </p>
-                </div>
-                {links.length > 0 && (
-                    <CitationBar citations={links.join(', ')} />
-                )}
-            </div>
-        );
-    }
- 
+// Consent overlay shown on top of a blurred HCP-gated message. Accept grants
+// consent for the whole session (revealing this and all other gated messages);
+// Deny keeps the message blurred but lets the conversation continue (the next
+// gated message will prompt again).
+const HCPConsentBar = ({ onAccept, onDeny }: { onAccept: () => void; onDeny: () => void }) => {
     return (
-        <div style={{ marginTop: '8px' }}>
-            <div style={{ 
-                padding: '10px 12px', 
-                background: '#f8fafc', 
-                borderRadius: '8px', 
-                border: '1px solid #e2e8f0',
+        <div
+            style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px',
+                zIndex: 2,
+            }}
+        >
+            <div style={{
+                padding: '12px 14px',
+                background: 'rgba(255,255,255,0.97)',
+                borderRadius: '10px',
+                border: `1px solid ${BLUE_L}40`,
+                boxShadow: '0 6px 24px rgba(27,61,143,0.18)',
+                maxWidth: '92%',
             }}>
-                <h3 style={{ 
-                    fontSize: '12px', 
-                    fontWeight: 700, 
-                    color: BLUE, 
+                <h3 style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: BLUE,
                     margin: '0 0 6px 0',
                 }}>
                     HCP Consent and Disclaimer
                 </h3>
-                <p style={{ 
-                    fontSize: '11px', 
-                    color: '#475569', 
-                    margin: '0 0 8px 0', 
+                <p style={{
+                    fontSize: '11px',
+                    color: '#475569',
+                    margin: '0 0 10px 0',
                     lineHeight: '1.5',
                 }}>
-                    This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information. The content provided herein does not replace professional discretion and should be considered supplementary to established clinical guidelines. Healthcare providers should verify all information against primary literature and current practice standards before application in patient care. Blue Cross Labs assumes no liability for clinical decisions based on this content.
+                    This information is intended for healthcare professionals. Any medical decision-making should rely on clinical judgment and independently verified information. The content provided herein does not replace professional discretion and should be considered supplementary to established clinical guidelines. Blue Cross Labs assumes no liability for clinical decisions based on this content.
                 </p>
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                     <button
-                        onClick={handleAccept}
+                        onClick={onDeny}
                         style={{
                             padding: '6px 14px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            color: BLUE,
+                            color: '#64748b',
                             background: 'white',
-                            border: `1px solid ${BLUE}`,
+                            border: '1px solid #cbd5e1',
                             borderRadius: '6px',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                         }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = BLUE_X;
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'white';
-                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
                     >
-                        Accept
+                        Deny
                     </button>
                     <button
-                        onClick={handleAcceptAll}
+                        onClick={onAccept}
                         style={{
                             padding: '6px 14px',
                             fontSize: '11px',
@@ -467,14 +435,10 @@ const HCPConsentBar = ({ citations, messageId }: { citations: string; messageId:
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                         }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.opacity = '0.9';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.opacity = '1';
-                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
                     >
-                        Accept All
+                        Accept
                     </button>
                 </div>
             </div>
@@ -494,8 +458,21 @@ function parseBold(text: string): React.ReactNode {
     });
 }
  
+// Turn inline "- " list separators (" - a - b - c") into real newline bullets so
+// the per-line bullet renderer picks them up. Requires whitespace on BOTH sides of
+// the dash, so hyphenated words ("Community-acquired") are never split. Only fires
+// when there are >=2 such separators (clearly a list) — avoids touching a lone dash
+// in prose. Handles en/em dashes too.
+function normalizeInlineLists(text: string): string {
+    const sepCount = (text.match(/\s[-–—]\s+/g) || []).length;
+    if (sepCount >= 2) {
+        return text.replace(/\s+[-–—]\s+/g, '\n- ');
+    }
+    return text;
+}
+
 function renderStructuredText(text: string): React.ReactNode {
-    const lines = text.split('\n');
+    const lines = normalizeInlineLists(text).split('\n');
     const elements: React.ReactNode[] = [];
     let key = 0;
  
@@ -662,13 +639,39 @@ function tryRenderCommaProductList(text: string): React.ReactNode | null {
     return <>{elements}</>;
 }
  
-const MessageBubble = ({ msg, messageIndex }: { msg: Message; messageIndex: number }) => {
+const MessageBubble = ({
+    msg,
+    messageIndex,
+    hcpConsent,
+    onAccept,
+    onDeny,
+}: {
+    msg: Message;
+    messageIndex: number;
+    hcpConsent: boolean;
+    onAccept: () => void;
+    onDeny: (index: number) => void;
+}) => {
     const isUser = msg.role === 'user';
     const hasProducts = !isUser && !!msg.products && msg.products.length > 0;
     const hasVideos = !isUser && !!msg.videos && msg.videos.length > 0;
     const hasCitations = !isUser && !!msg.citations && msg.citations.trim().length > 0;
-    const hasPdf = hasCitations && /\bpdf\b/i.test(msg.citations!);
- 
+
+    // HCP-gated: decided at stream start (msg.hcpGated) so the message blurs from
+    // its first token. Blur the whole message until consent is granted.
+    const isGated = msg.hcpGated === true;
+    const gatedBlur = isGated && !hcpConsent;
+    const showOverlay = gatedBlur && !msg.denied;
+
+    // Citation links excluding the "pdf" sentinel (which is not a real URL).
+    const visibleCitations = hasCitations
+        ? msg.citations!
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s && s.toLowerCase() !== 'pdf')
+              .join(', ')
+        : '';
+
     return (
         <div style={{
             display: 'flex',
@@ -676,52 +679,60 @@ const MessageBubble = ({ msg, messageIndex }: { msg: Message; messageIndex: numb
             marginBottom: '12px',
             animation: 'slideIn 0.25s ease-out forwards',
         }}>
-            <div style={{ maxWidth: '88%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ maxWidth: '88%', display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
                 <div style={{
-                    padding: '10px 14px',
-                    borderRadius: '14px',
-                    fontSize: '13.5px',
-                    lineHeight: '1.55',
-                    wordWrap: 'break-word',
-                    backgroundColor: isUser ? BLUE : '#fff',
-                    color: isUser ? '#fff' : '#1A2942',
-                    border: isUser ? 'none' : '1px solid #e2e8f0',
-                    boxShadow: isUser ? '0 2px 8px rgba(27,61,143,0.18)' : '0 1px 2px rgba(0,0,0,0.05)',
-                    borderBottomRightRadius: isUser ? '2px' : '14px',
-                    borderBottomLeftRadius: !isUser ? '2px' : '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    filter: gatedBlur ? 'blur(6px)' : 'none',
+                    pointerEvents: gatedBlur ? 'none' : 'auto',
+                    userSelect: gatedBlur ? 'none' : 'auto',
+                    transition: 'filter 0.2s ease',
                 }}>
-                    {isUser ? msg.text : renderStructuredText(msg.text)}
+                    <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '14px',
+                        fontSize: '13.5px',
+                        lineHeight: '1.55',
+                        wordWrap: 'break-word',
+                        backgroundColor: isUser ? BLUE : '#fff',
+                        color: isUser ? '#fff' : '#1A2942',
+                        border: isUser ? 'none' : '1px solid #e2e8f0',
+                        boxShadow: isUser ? '0 2px 8px rgba(27,61,143,0.18)' : '0 1px 2px rgba(0,0,0,0.05)',
+                        borderBottomRightRadius: isUser ? '2px' : '14px',
+                        borderBottomLeftRadius: !isUser ? '2px' : '14px',
+                    }}>
+                        {isUser ? msg.text : renderStructuredText(msg.text)}
+                    </div>
+
+                    {hasProducts && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
+                            {msg.products!.map((p, i) => (
+                                <ProductCard key={i} products={p} />
+                            ))}
+                        </div>
+                    )}
+
+                    {hasVideos && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
+                            {msg.videos!.map((v, i) => (
+                                <VideoCard key={i} video={v} />
+                            ))}
+                        </div>
+                    )}
+
+                    {hasCitations && visibleCitations && (
+                        <div style={{ paddingLeft: '2px' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.03em' }}>
+                                SOURCES
+                            </span>
+                            <CitationBar citations={visibleCitations} />
+                        </div>
+                    )}
                 </div>
- 
-                {hasProducts && (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
-                        {msg.products!.map((p, i) => (
-                            <ProductCard key={i} products={p} />
-                        ))}
-                    </div>
-                )}
- 
-                {hasVideos && (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingLeft: '2px' }}>
-                        {msg.videos!.map((v, i) => (
-                            <VideoCard key={i} video={v} />
-                        ))}
-                    </div>
-                )}
- 
-                {hasCitations && hasPdf && (
-                    <div style={{ paddingLeft: '2px' }}>
-                        <HCPConsentBar citations={msg.citations!} messageId={`msg-${messageIndex}`} />
-                    </div>
-                )}
- 
-                {hasCitations && !hasPdf && (
-                    <div style={{ paddingLeft: '2px' }}>
-                        <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, letterSpacing: '0.03em' }}>
-                            SOURCES
-                        </span>
-                        <CitationBar citations={msg.citations!} />
-                    </div>
+
+                {showOverlay && (
+                    <HCPConsentBar onAccept={onAccept} onDeny={() => onDeny(messageIndex)} />
                 )}
             </div>
         </div>
@@ -763,6 +774,9 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    // Session-wide HCP consent. Once true, all HCP-gated messages (past and
+    // future) are shown without blurring. Seeded from the backend session.
+    const [hcpConsent, setHcpConsent] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
  
     useEffect(() => {
@@ -781,28 +795,96 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         try {
             const payload: Record<string, unknown> = { message: text, top_k: 20 };
             if (sessionId) payload.session_id = sessionId;
- 
+
             const res = await fetch(API_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+                headers: { 'Content-Type': 'application/json', accept: 'text/event-stream' },
                 body: JSON.stringify(payload),
             });
- 
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
- 
-            const data = await res.json();
- 
-            if (data.session?.session_id && !sessionId) {
-                setSessionId(data.session.session_id);
+
+            if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+            // The bot message is created on the first chunk and is always the LAST
+            // message during streaming, so we update by tail index.
+            let acc = '';
+            let botStarted = false;
+            // Whether this response must stream behind the HCP-consent blur,
+            // decided by the backend `start` event before any token arrives.
+            let gated = false;
+
+            const startBot = () => {
+                botStarted = true;
+                setIsLoading(false); // swap the typing indicator for the live message
+                setMessages((prev) => [...prev, { role: 'bot', text: '', hcpGated: gated }]);
+            };
+            const setBot = (patch: Message) => {
+                setMessages((prev) => {
+                    const next = prev.slice();
+                    const i = next.length - 1;
+                    if (i >= 0 && next[i].role === 'bot') next[i] = patch;
+                    return next;
+                });
+            };
+
+            const handleEvent = (evt: any) => {
+                if (evt.type === 'start') {
+                    if (evt.session_id) setSessionId((cur) => cur ?? evt.session_id);
+                    if (evt.hcp_consent) setHcpConsent(true);
+                    // Blur from the first token if this response is HCP-gated.
+                    gated = !!evt.requires_consent;
+                } else if (evt.type === 'delta') {
+                    if (!botStarted) startBot();
+                    acc += evt.text ?? '';
+                    setBot({ role: 'bot', text: acc, hcpGated: gated });
+                } else if (evt.type === 'done') {
+                    if (!botStarted) startBot();
+                    if (evt.session?.session_id) setSessionId(evt.session.session_id);
+                    if (evt.session?.hcp_consent) setHcpConsent(true);
+                    setBot({
+                        role: 'bot',
+                        text: evt.answer ?? acc ?? '',
+                        hcpGated: gated,
+                        products: evt.products ?? [],
+                        videos: evt.videos ?? [],
+                        citations: evt.citations ?? '',
+                    });
+                } else if (evt.type === 'error') {
+                    if (!botStarted) startBot();
+                    setBot({ role: 'bot', text: evt.detail || 'Something went wrong. Please try again.' });
+                }
+            };
+
+            const processChunk = (raw: string) => {
+                const trimmed = raw.trim();
+                if (!trimmed) return;
+                const line = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+                try { handleEvent(JSON.parse(line)); } catch { /* ignore partial/non-JSON */ }
+            };
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let sep: number;
+                while ((sep = buffer.indexOf('\n\n')) !== -1) {
+                    processChunk(buffer.slice(0, sep));
+                    buffer = buffer.slice(sep + 2);
+                }
             }
- 
-            setMessages((prev) => [...prev, {
-                role: 'bot',
-                text: data.answer ?? 'Sorry, I could not get a response. Please try again.',
-                products: data.products ?? [],
-                videos: data.videos ?? [],
-                citations: data.citations ?? '',
-            }]);
+            // Flush any trailing event not terminated by a blank line.
+            processChunk(buffer);
+
+            if (!botStarted) {
+                // No events arrived at all — surface a fallback.
+                setMessages((prev) => [...prev, {
+                    role: 'bot',
+                    text: 'Sorry, I could not get a response. Please try again.',
+                }]);
+            }
         } catch {
             setMessages((prev) => [...prev, {
                 role: 'bot',
@@ -812,7 +894,26 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             setIsLoading(false);
         }
     };
- 
+
+    // Accept: grant consent for the whole session — reveal this and all other
+    // HCP-gated messages, and persist it on the backend session.
+    const handleConsentAccept = () => {
+        setHcpConsent(true);
+        if (sessionId) {
+            fetch(`${API_URL}/hcp-consent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', accept: 'application/json' },
+                body: JSON.stringify({ session_id: sessionId }),
+            }).catch(() => { /* best-effort; UI already reflects consent */ });
+        }
+    };
+
+    // Deny: keep this message blurred (dismiss its prompt) but allow the
+    // conversation to continue. The next HCP-gated message will prompt again.
+    const handleConsentDeny = (index: number) => {
+        setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, denied: true } : m)));
+    };
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
             <div
@@ -848,7 +949,14 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     ) : (
                         <>
                             {messages.map((msg, i) => (
-                                <MessageBubble key={i} msg={msg} messageIndex={i} />
+                                <MessageBubble
+                                    key={i}
+                                    msg={msg}
+                                    messageIndex={i}
+                                    hcpConsent={hcpConsent}
+                                    onAccept={handleConsentAccept}
+                                    onDeny={handleConsentDeny}
+                                />
                             ))}
                             {isLoading && <TypingBubble />}
                             <div ref={messagesEndRef} />

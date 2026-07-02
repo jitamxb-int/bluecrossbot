@@ -66,6 +66,17 @@ class ChatSession(Document):
     duration_seconds: float = 0.0
     is_active: bool = True
 
+    # --- consent ---
+    # Whether the user granted HCP (healthcare-professional) consent for this
+    # session. Once True, HCP-gated answers are shown without re-prompting.
+    hcp_consent: bool = False
+
+    # --- support routing ---
+    # Per-product count of user questions genuinely about that product (keyed by
+    # canonical product_name). Once a product exceeds the limit, further questions
+    # about it are routed to email support instead of a detailed answer.
+    product_query_counts: dict[str, int] = Field(default_factory=dict)
+
     # --- bookkeeping ---
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -141,7 +152,7 @@ class SessionRepository:
         sort_order: str,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
-    ) -> tuple[int, list["ChatSession"]]:
+    ) -> tuple[int, list[ChatSession]]:
         """Return ``(total, page)`` with optional status/date filters and sorting."""
         filter_expr = {}
         if status == "active":
@@ -175,7 +186,7 @@ class SessionRepository:
         result = await ChatSession.find({"session_id": {"$in": session_ids}}).delete()
         return result.deleted_count if result else 0
 
-    async def get_session(self, session_id: str) -> "ChatSession | None":
+    async def get_session(self, session_id: str) -> ChatSession | None:
         """Return the full session document, or ``None`` if the id is unknown.
 
         Used by the chat flow to inspect ``started_at`` / ``is_active`` and the
@@ -188,6 +199,16 @@ class SessionRepository:
         await ChatSession.find(ChatSession.session_id == session_id).update(
             {"$set": {"is_active": False, "updated_at": _utcnow()}}
         )
+
+    async def set_hcp_consent(self, session_id: str) -> ChatSession | None:
+        """Grant HCP consent for a session. Returns the updated session (or None)."""
+        session = await ChatSession.find_one(ChatSession.session_id == session_id)
+        if session is None:
+            return None
+        session.hcp_consent = True
+        session.updated_at = _utcnow()
+        await session.save()
+        return session
 
     async def get_history(self, session_id: str) -> tuple[bool, list[dict], str | None]:
         """Load ``(found, chat_json, conversation_summary)``; ``(False, [], None)`` if unknown.
@@ -208,6 +229,7 @@ class SessionRepository:
         assistant_content: str,
         summary: str | None = None,
         started_at: datetime | None = None,
+        product_query_counts: dict[str, int] | None = None,
     ) -> ChatSession:
         """Append one user+assistant turn, refresh the summary, update timing.
 
@@ -231,6 +253,7 @@ class SessionRepository:
                 started_at=turn_start,
                 ended_at=now,
                 duration_seconds=(now - turn_start).total_seconds(),
+                product_query_counts=product_query_counts or {},
             )
             await session.insert()
             return session
@@ -238,6 +261,8 @@ class SessionRepository:
         session.chat_json.extend(turn)
         if summary is not None:
             session.conversation_summary = summary
+        if product_query_counts is not None:
+            session.product_query_counts = product_query_counts
         session.ended_at = now
         session.duration_seconds = (now - _as_aware(session.started_at)).total_seconds()
         session.is_active = True  # a returning user re-activates a previously idle session

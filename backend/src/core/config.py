@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     # --- Chat ---
     chat_history_window_turns: int = 10
     chat_retrieval_top_k: int = 6
+    # Minimum similarity score for the linked PI document to be considered a
+    # sufficient answer before falling back to the PIL. Corpus-dependent — tune
+    # against real embeddings.
+    pi_relevance_threshold: float = 0.35
+    # Minimum similarity score for a retrieved PDF chunk to count as grounding for
+    # the HCP-consent gate. Below this (e.g. greetings/chit-chat, which only match
+    # weakly) the answer is NOT blurred. Corpus-dependent — tune if needed.
+    pdf_consent_min_score: float = 0.3
 
     # --- Chunking defaults (overridable per request) ---
     default_chunk_size: int = 600

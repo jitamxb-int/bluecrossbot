@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 from src.api.models.chat import (
@@ -36,6 +37,7 @@ from src.api.models.chat import (
 )
 from src.core.config import Settings
 from src.core.logging.setup import get_logger
+from src.services.llm.errors import LLMError
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
 from src.storage.mongo.config import ConfigRepository
@@ -45,9 +47,21 @@ logger = get_logger(__name__)
 
 # Returned (HTTP 200) when a message targets a session past its max duration.
 SESSION_EXPIRED_MESSAGE = (
-    "Maximum chat session duration has been reached. "
-    "Please create a new session by refreshing the page."
+    "Your chat session has reached the maximum allowed duration and has now ended. "
+    "Please refresh the page to start a new session. "
+    "If you require any additional information or assistance, feel free to email us at "
+    "abcdummy@gmail.com, and our team will get back to you as soon as possible."
 )
+
+# After more than this many questions about the SAME product in one session, the
+# bot stops giving detailed product answers and routes the user to email support.
+PRODUCT_QUERY_LIMIT = 5
+EMAIL_SUPPORT_MESSAGE = (
+    "If you require any additional information or assistance regarding this "
+    "product, please feel free to email us at abcdummy@gmail.com. Our team will "
+    "be happy to assist you and will get back to you as soon as possible."
+)
+
 _SYSTEM_INSTRUCTIONS = (
     # ── ROLE ──────────────────────────────────────────────────────────
     "You are a helpful assistant for Blue Cross Laboratories.\n\n"
@@ -61,15 +75,37 @@ _SYSTEM_INSTRUCTIONS = (
     "## NO-HALLUCINATION RULE (HIGHEST PRIORITY)\n"
     "If the [RETRIEVED CONTEXT] does NOT answer the user's question, do NOT "
     "guess, infer, or fabricate. Reply with:\n"
-    "  'I'm sorry, I don't have the information to answer that. "
-    "Feel free to ask something else!'\n"
+    "  'I'm sorry, I don't have enough information to answer that question at the moment. "
+    "If you need a more detailed or prompt response, please feel free to email us at "
+    "abcdummy@gmail.com, and our team will be happy to assist you.'\n"
     "Rephrase naturally, but keep the meaning: you lack the data, you won't "
-    "invent an answer, and the user is welcome to ask something else. "
+    "invent an answer, and the user can reach out by email for further help. "
     "Return empty product_ids, video_ids, and source_ids in this case.\n"
     "An honest 'I don't know' is always correct. A plausible but unsupported "
     "answer is never acceptable.\n\n"
 
-    # ── 3. INTERNAL TAGS ──────────────────────────────────────────────
+    # ── 3. COMPOSITION / INGREDIENT QUESTIONS (HIGH PRIORITY) ─────────
+    "## COMPOSITION / INGREDIENT QUESTIONS\n"
+    "This rule overrides any instinct to reuse the full context chunk as-is.\n"
+    "If the user asks about a product's 'composition', 'ingredients', 'what "
+    "does it contain', 'formula', or similar — and does NOT explicitly say "
+    "'inactive ingredients', 'excipients', or 'full formulation' — then:\n"
+    "- Answer with ONLY the active ingredient(s) and strength, in one short "
+    "sentence.\n"
+    "- Do NOT use the words 'inactive', 'excipient', 'microcrystalline "
+    "cellulose', 'starch', 'stabilization', 'flavouring', or any other "
+    "excipient name in this reply, even briefly or in passing.\n"
+    "- Do NOT structure the answer as a list with an active/inactive split. "
+    "One plain sentence is enough.\n"
+    "- Example — user asks 'tell me about its composition':\n"
+    "  CORRECT: 'MEFTAL-P Dispersible Tablets contain 100 mg of mefenamic "
+    "acid per tablet.'\n"
+    "  INCORRECT: any version that also mentions inactive ingredients or "
+    "excipients.\n"
+    "- Only give the inactive ingredients / excipients list if the user's "
+    "own message explicitly asks for them.\n\n"
+
+    # ── 4. INTERNAL TAGS ──────────────────────────────────────────────
     "## INTERNAL TAGS\n"
     "Context is tagged as [D1], [D2] (descriptive), [P1], [P2] (products), "
     "[V1], [V2] (videos). Tags go ONLY in structured fields, NEVER in the "
@@ -80,16 +116,16 @@ _SYSTEM_INSTRUCTIONS = (
     "Only include tags that genuinely fit. Never invent product names, image "
     "URLs, or video URLs.\n\n"
 
-    # ── 4. ANSWER TEXT FORMATTING ─────────────────────────────────────
+    # ── 5. ANSWER TEXT FORMATTING ─────────────────────────────────────
     "## ANSWER TEXT FORMATTING\n"
     "Refer to products and videos by their real NAMES (e.g. 'Dolostat Gel'). "
     "NEVER write tag tokens like P1, V2, or D1 in the visible answer. "
     "The app attaches images and links from the structured id fields.\n\n"
 
-    # ── 5. RESPONSE FORMATTING ────────────────────────────────────────
+    # ── 6. RESPONSE FORMATTING ────────────────────────────────────────
     "## RESPONSE FORMATTING\n"
-    "Keep responses crisp and to the point — include all necessary information "
-    "but cut everything that doesn't add value:\n"
+    "Every response must be precise and crisp — not too long, not too short, "
+    "just enough to fully answer the question and nothing more:\n"
     "- **Short answers**: plain prose, 1–3 sentences. No lists, no bold unless "
     "a term truly needs emphasis.\n"
     "- **Longer answers**: use bullet points to break up the content. Each "
@@ -98,9 +134,20 @@ _SYSTEM_INSTRUCTIONS = (
     "- **Bold** only product names, critical warnings, or key terms the user "
     "must not miss.\n"
     "- Never pad responses. If the full answer fits in two sentences, write "
-    "two sentences.\n\n"
+    "two sentences.\n"
+    "- **Answer strictly what was asked — nothing adjacent, even if it's in "
+    "the context.** (See the COMPOSITION / INGREDIENT QUESTIONS rule above "
+    "for the specific case of composition questions.) This applies more "
+    "broadly too:\n"
+    "  - 'dosage' → dose/frequency only, not storage or warnings.\n"
+    "  - 'side effects' → side effects only, not contraindications or "
+    "dosage.\n"
+    "  - If truly unsure whether the user wants the fuller picture, answer "
+    "the narrow question first and offer to share more "
+    "(e.g. 'Let me know if you'd also like more detail.') rather than "
+    "dumping everything.\n\n"
 
-    # ── 6. PROACTIVE PRODUCTS & VIDEOS ───────────────────────────────
+    # ── 7. PROACTIVE PRODUCTS & VIDEOS ───────────────────────────────
     "## PROACTIVE PRODUCTS & VIDEOS\n"
     "Do NOT wait for the user to ask. Whenever the [RETRIEVED CONTEXT] has a "
     "relevant product or video, include it every time it fits — proactively:\n"
@@ -112,19 +159,18 @@ _SYSTEM_INSTRUCTIONS = (
     "- Neither relevant → return empty lists. Never force irrelevant items.\n\n"
     "Weave mentions naturally into the answer — not as an afterthought.\n\n"
 
-    # ── 7. CONVERSATION SUMMARY ───────────────────────────────────────
+    # ── 8. CONVERSATION SUMMARY ───────────────────────────────────────
     "## CONVERSATION SUMMARY\n"
     "Always produce conversation_summary: merge the previous summary with this "
     "turn into ONE plain-text string of 100–200 characters (no markdown, no "
     "line breaks, no 'Summary:' prefix). Prioritise the user's primary intent "
     "and the most recent exchange.\n\n"
 
-    # ── 8. GREETINGS & CHIT-CHAT ──────────────────────────────────────
+    # ── 9. GREETINGS & CHIT-CHAT ──────────────────────────────────────
     "## GREETINGS & CHIT-CHAT\n"
     "Respond naturally and keep it conversational. Return empty product_ids, "
     "video_ids, and source_ids. Do not mention context or tags."
 )
-
 
 class ChatService:
     def __init__(
@@ -204,6 +250,122 @@ class ChatService:
         logger.info("sessions_deleted", deleted=deleted, requested=len(request.session_ids))
         return DeleteSessionsResponse(deleted=deleted, requested=len(request.session_ids))
 
+    async def set_hcp_consent(self, session_id: str) -> SessionInfo | None:
+        """Grant HCP consent for a session; returns the updated SessionInfo or None."""
+        session = await self._sessions.set_hcp_consent(session_id)
+        if session is None:
+            return None
+        logger.info("hcp_consent_granted", session_id=session_id)
+        return SessionInfo(
+            session_id=session.session_id,
+            started_at=session.started_at,
+            ended_at=session.ended_at,
+            duration_seconds=session.duration_seconds,
+            is_active=session.is_active,
+            hcp_consent=session.hcp_consent,
+        )
+
+    async def _product_gate(
+        self,
+        session: object | None,
+        message: str,
+        standalone: str,
+        chat_history: list[dict],
+        product_map: dict[str, dict],
+    ) -> tuple[dict[str, int], bool, str | None]:
+        """Identify the focused product, bump its per-session counter, decide gating.
+
+        Returns ``(updated_counts, gated, focused_product)``. ``gated`` is True once
+        the focused product exceeds ``PRODUCT_QUERY_LIMIT`` (i.e. the 6th+ question
+        about it) — the caller then routes to email support instead of answering.
+        """
+        candidates = list(
+            {p.get("product_name") for p in product_map.values() if p.get("product_name")}
+        )
+        focused = await self._llm.identify_product(
+            message, standalone, chat_history, candidates
+        )
+        counts = dict(session.product_query_counts) if session is not None else {}
+        gated = False
+        if focused:
+            counts[focused] = counts.get(focused, 0) + 1
+            gated = counts[focused] > PRODUCT_QUERY_LIMIT
+            logger.info(
+                "product_query_counted",
+                product=focused,
+                count=counts[focused],
+                gated=gated,
+            )
+        return counts, gated, focused
+
+    async def _apply_pi_priority(
+        self,
+        standalone: str,
+        descriptive_map: dict[str, dict],
+        top_k: int,
+    ) -> dict[str, dict]:
+        """Prioritize the linked PI document over its PIL for a product question.
+
+        If the retrieved descriptive context includes PI/PIL chunks, scope the
+        context to the dominant product's PI chunks first; if the best PI chunk
+        isn't relevant enough (``pi_relevance_threshold``), fall back to the linked
+        PIL chunks. When no PI/PIL chunks are present the map is returned unchanged
+        (existing blended behavior is preserved).
+        """
+        pipil = [
+            (tag, p)
+            for tag, p in descriptive_map.items()
+            if p.get("pdf_type") in ("PI", "PIL")
+        ]
+        if not pipil:
+            return descriptive_map
+
+        target_key = max(pipil, key=lambda tp: tp[1].get("_score") or 0.0)[1].get("product_key")
+        if not target_key:
+            return descriptive_map
+
+        pi_points = await self._retrieval.search(
+            standalone, top_k, {"product_key": target_key, "pdf_type": "PI"}
+        )
+        pi_top = (pi_points[0].score or 0.0) if pi_points else None
+        pi_sufficient = pi_points and (pi_top or 0.0) >= self._settings.pi_relevance_threshold
+
+        if pi_sufficient:
+            chosen, used = pi_points, "PI"
+        else:
+            pil_points = await self._retrieval.search(
+                standalone, top_k, {"product_key": target_key, "pdf_type": "PIL"}
+            )
+            chosen = pil_points or pi_points
+            used = "PIL" if pil_points else "PI"
+
+        # Scoped search found nothing usable — keep the blended context rather than
+        # dropping the PI/PIL chunks (preserves grounding, citations, and the PDF
+        # signal the HCP gate depends on).
+        if not chosen:
+            logger.info("pi_pil_selection_empty", product_key=target_key)
+            return descriptive_map
+
+        logger.info(
+            "pi_pil_selection", product_key=target_key, used=used, pi_top_score=pi_top
+        )
+
+        # Rebuild the descriptive map: keep non-PI/PIL descriptive chunks, then
+        # append the chosen PI/PIL chunks, re-tagged D1, D2, … in order.
+        rebuilt: dict[str, dict] = {}
+        index = 0
+        for _tag, payload in descriptive_map.items():
+            if payload.get("pdf_type") in ("PI", "PIL"):
+                continue
+            index += 1
+            rebuilt[f"D{index}"] = payload
+        for point in chosen:
+            payload = dict(point.payload or {})
+            payload["_score"] = getattr(point, "score", None)
+            index += 1
+            rebuilt[f"D{index}"] = payload
+        return rebuilt
+
     async def answer(self, request: ChatRequest) -> ChatResponse:
         # Capture arrival time BEFORE retrieval + LLM so a single-turn session records the
         # real time the turn took (otherwise started_at == ended_at and duration is 0).
@@ -245,6 +407,7 @@ class ChatService:
                         ended_at=session.ended_at,
                         duration_seconds=session.duration_seconds,
                         is_active=False,
+                        hcp_consent=session.hcp_consent,
                     ),
                     citations="",
                     products=[],
@@ -265,6 +428,37 @@ class ChatService:
         logger.info(f"Retrieved {len(points)} points from vector search")
         logger.debug(f"Retrieved points: {points}")
         descriptive_map, product_map, video_map = _split_by_type(points)
+
+        # 3a1. PI-priority: prefer the linked PI document, fall back to its PIL.
+        descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
+
+        # 3a. PRODUCT QUERY GATE. If the user has asked > limit questions about the
+        #     same product, stop answering in detail and route to email support.
+        counts, product_gated, _focused = await self._product_gate(
+            session, request.message, standalone, chat_history, product_map
+        )
+        if product_gated:
+            session = await self._sessions.append_turn(
+                session_id=session_id,
+                user_query=request.message,
+                assistant_content=EMAIL_SUPPORT_MESSAGE,
+                started_at=request_started_at,
+                product_query_counts=counts,
+            )
+            return ChatResponse(
+                answer=EMAIL_SUPPORT_MESSAGE,
+                session=SessionInfo(
+                    session_id=session.session_id,
+                    started_at=session.started_at,
+                    ended_at=session.ended_at,
+                    duration_seconds=session.duration_seconds,
+                    is_active=session.is_active,
+                    hcp_consent=session.hcp_consent,
+                ),
+                citations="",
+                products=[],
+                videos=[],
+            )
 
         # 4. Build the prompt.
         messages = self._build_messages(
@@ -293,6 +487,7 @@ class ChatService:
             assistant_content=answer,
             summary=new_summary,
             started_at=request_started_at,
+            product_query_counts=counts,
         )
         logger.info(
             "chat_turn_complete",
@@ -310,11 +505,203 @@ class ChatService:
                 ended_at=session.ended_at,
                 duration_seconds=session.duration_seconds,
                 is_active=session.is_active,
+                hcp_consent=session.hcp_consent,
             ),
             citations=citations,
             products=products,
             videos=videos,
         )
+
+    async def answer_stream(self, request: ChatRequest) -> AsyncIterator[dict]:
+        """Streaming variant of :meth:`answer` — yields SSE event dicts.
+
+        Emits ``start`` -> ``delta``* -> ``done`` (or a single ``done`` for an
+        expired session, or ``error`` on failure). Mirrors ``answer``'s
+        load / expiry-gate / retrieve / resolve / persist logic so behaviour is
+        identical, only delivered incrementally.
+        """
+        request_started_at = datetime.now(UTC)
+        session_id = request.session_id or uuid.uuid4().hex
+        top_k = request.top_k or self._settings.chat_retrieval_top_k
+
+        try:
+            # 1. LOAD + stale-id handling.
+            session = await self._sessions.get_session(session_id)
+            if request.session_id and session is None:
+                logger.info("chat_session_replaced", stale_session_id=session_id)
+                session_id = uuid.uuid4().hex
+                session = None
+
+            # 1a. MAX-DURATION GATE — expired session: one done event, no streaming.
+            if session is not None:
+                max_minutes = await self._config.get_max_session_duration_minutes()
+                started = session.started_at
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=UTC)
+                if request_started_at - started >= timedelta(minutes=max_minutes):
+                    if session.is_active:
+                        await self._sessions.mark_inactive(session_id)
+                    logger.info(
+                        "chat_session_expired",
+                        session_id=session_id,
+                        max_session_duration_minutes=max_minutes,
+                    )
+                    yield {
+                        "type": "done",
+                        "answer": SESSION_EXPIRED_MESSAGE,
+                        "session": SessionInfo(
+                            session_id=session.session_id,
+                            started_at=session.started_at,
+                            ended_at=session.ended_at,
+                            duration_seconds=session.duration_seconds,
+                            is_active=False,
+                            hcp_consent=session.hcp_consent,
+                        ).model_dump(mode="json"),
+                        "citations": "",
+                        "products": [],
+                        "videos": [],
+                    }
+                    return
+
+            chat_history = session.chat_json if session is not None else []
+            summary = session.conversation_summary if session is not None else None
+
+            # 2-4. Rewrite (retrieval only) -> retrieve -> build prompt.
+            standalone = await self._llm.rewrite_standalone(
+                request.message, summary, chat_history
+            )
+            logger.info(f"Standalone query generated: {standalone}")
+            points = await self._retrieval.search(standalone, top_k)
+            logger.info(f"Retrieved {len(points)} points from vector search")
+
+            # HCP-consent signal is decided from what retrieval SURFACED (blended),
+            # BEFORE PI-priority reshaping — so scoping/fallback can never hide that
+            # PDF content was retrieved and silently turn off the blur. A relevance
+            # floor excludes weak neighbors (greetings/chit-chat match PDF chunks only
+            # at very low scores, so they must NOT be blurred).
+            retrieval_has_pdf = any(
+                ((pt.payload or {}).get("source_url") or "").lower() == "pdf"
+                and (pt.score or 0.0) >= self._settings.pdf_consent_min_score
+                for pt in points
+            )
+
+            descriptive_map, product_map, video_map = _split_by_type(points)
+
+            # PI-priority: prefer the linked PI document, fall back to its PIL.
+            descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
+
+            session_consented = bool(session is not None and session.hcp_consent)
+
+            # 4a. PRODUCT QUERY GATE (before any token streams). Once the user has
+            #     asked > limit questions about the same product, route to email
+            #     support instead of a detailed answer. Never HCP-blurred.
+            counts, product_gated, _focused = await self._product_gate(
+                session, request.message, standalone, chat_history, product_map
+            )
+            if product_gated:
+                yield {
+                    "type": "start",
+                    "session_id": session_id,
+                    "hcp_consent": session_consented,
+                    "requires_consent": False,
+                }
+                yield {"type": "delta", "text": EMAIL_SUPPORT_MESSAGE}
+                session = await self._sessions.append_turn(
+                    session_id=session_id,
+                    user_query=request.message,
+                    assistant_content=EMAIL_SUPPORT_MESSAGE,
+                    started_at=request_started_at,
+                    product_query_counts=counts,
+                )
+                yield {
+                    "type": "done",
+                    "answer": EMAIL_SUPPORT_MESSAGE,
+                    "session": SessionInfo(
+                        session_id=session.session_id,
+                        started_at=session.started_at,
+                        ended_at=session.ended_at,
+                        duration_seconds=session.duration_seconds,
+                        is_active=session.is_active,
+                        hcp_consent=session.hcp_consent,
+                    ).model_dump(mode="json"),
+                    "citations": "",
+                    "products": [],
+                    "videos": [],
+                }
+                return
+
+            messages = self._build_messages(
+                request.message, chat_history, summary, descriptive_map, product_map, video_map
+            )
+
+            # 5. Decide the HCP-consent gate BEFORE any token streams, using the
+            #    pre-reshape retrieval signal above: if any retrieved chunk is
+            #    PDF-sourced and the session hasn't consented, the answer must
+            #    stream behind the blur from the first token.
+            requires_consent = retrieval_has_pdf and not session_consented
+
+            # 6. Stream the LLM answer; capture the final structured payload.
+            yield {
+                "type": "start",
+                "session_id": session_id,
+                "hcp_consent": session_consented,
+                "requires_consent": requires_consent,
+            }
+            final: dict = {}
+            async for event in self._llm.stream_structured(messages):
+                if "delta" in event:
+                    yield {"type": "delta", "text": event["delta"]}
+                elif "final" in event:
+                    final = event["final"]
+
+            # 7. Resolve chosen tags -> grounded references (same as answer()).
+            answer = _sanitize_answer(final.get("answer", ""))
+            new_summary = final.get("conversation_summary")
+            products = _resolve_products(final.get("product_ids", []), product_map)
+            videos = _resolve_videos(final.get("video_ids", []), video_map)
+            source_tags = _normalize_tags(final.get("source_ids", []), "D")
+            citations = _build_sources(descriptive_map, source_tags, products, videos)
+
+            # 8. SAVE (raw query + final answer).
+            session = await self._sessions.append_turn(
+                session_id=session_id,
+                user_query=request.message,
+                assistant_content=answer,
+                summary=new_summary,
+                started_at=request_started_at,
+                product_query_counts=counts,
+            )
+            logger.info(
+                "chat_turn_complete",
+                session_id=session_id,
+                products=len(products),
+                videos=len(videos),
+                citations=len(citations.split(", ")) if citations else 0,
+            )
+
+            yield {
+                "type": "done",
+                "answer": answer,
+                "session": SessionInfo(
+                    session_id=session.session_id,
+                    started_at=session.started_at,
+                    ended_at=session.ended_at,
+                    duration_seconds=session.duration_seconds,
+                    is_active=session.is_active,
+                    hcp_consent=session.hcp_consent,
+                ).model_dump(mode="json"),
+                "citations": citations,
+                "products": [p.model_dump(mode="json") for p in products],
+                "videos": [v.model_dump(mode="json") for v in videos],
+            }
+        except Exception as exc:  # noqa: BLE001 - always close the stream gracefully
+            logger.exception("chat_stream_failed", error=str(exc))
+            detail = (
+                str(exc)
+                if isinstance(exc, LLMError)
+                else "Something went wrong while streaming the response."
+            )
+            yield {"type": "error", "detail": detail}
 
     def _build_messages(
         self,
