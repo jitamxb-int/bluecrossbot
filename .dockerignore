@@ -18,6 +18,12 @@ __pycache__/
 logs/*
 qdrant_storage/
 
+# Frontend .env files ARE needed in the build context — Vite reads them at BUILD
+# time and bakes VITE_* into the static bundle.
+!frontend/.env
+!admin-frontend/.env
+!upload-frontend/.env
+
 # Docs / tests not needed in the runtime image
 README.md
 tests/
@@ -27,3 +33,11 @@ tests/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Node deps & frontend build outputs (frontends build inside the image; keep the
+# build context small and avoid clobbering the image's installed node_modules).
+# NOTE: package-lock.json is intentionally NOT ignored — `npm ci` needs it.
+**/node_modules/
+frontend/dist/
+admin-frontend/build/
+upload-frontend/build/
