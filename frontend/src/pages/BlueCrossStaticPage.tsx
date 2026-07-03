@@ -10,6 +10,14 @@ const BLUE_X = '#EEF3FB';
 // Backend base URL comes from the .env (VITE_API_URL); falls back to localhost for dev.
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_URL = `${API_BASE}/api/v1/chat`;
+
+// Shown in place of the (blurred) RAG response when the user denies HCP consent.
+const CONSENT_DENIED_MESSAGE =
+    'You have chosen not to provide your consent. As a result, we are unable to ' +
+    'continue this conversation or provide further assistance through the chatbot. ' +
+    'If you would like to start a new session, please refresh the page. If you ' +
+    'require any additional information or assistance, feel free to email us at ' +
+    'abcdummy@gmail.com, and our team will get back to you as soon as possible.';
  
 interface Video {
     title: string;
@@ -778,6 +786,11 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     // Session-wide HCP consent. Once true, all HCP-gated messages (past and
     // future) are shown without blurring. Seeded from the backend session.
     const [hcpConsent, setHcpConsent] = useState(false);
+    // Set true when the user denies HCP consent: the session is locked (no further
+    // messages). deniedRef mirrors it so an in-flight stream (whose closure can't
+    // see updated state) stops mutating the replaced message immediately.
+    const [sessionDenied, setSessionDenied] = useState(false);
+    const deniedRef = useRef(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
  
     useEffect(() => {
@@ -787,7 +800,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         const text = inputText.trim();
-        if (!text || isLoading) return;
+        if (!text || isLoading || deniedRef.current) return;
  
         setMessages((prev) => [...prev, { role: 'user', text }]);
         setInputText('');
@@ -828,6 +841,9 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             };
 
             const handleEvent = (evt: any) => {
+                // If the user denied consent mid-stream, ignore any further events
+                // so the denial message we swapped in is never overwritten.
+                if (deniedRef.current) return;
                 if (evt.type === 'start') {
                     if (evt.session_id) setSessionId((cur) => cur ?? evt.session_id);
                     if (evt.hcp_consent) setHcpConsent(true);
@@ -909,10 +925,15 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         }
     };
 
-    // Deny: keep this message blurred (dismiss its prompt) but allow the
-    // conversation to continue. The next HCP-gated message will prompt again.
+    // Deny: replace the (blurred) RAG response with the denial message and lock the
+    // session — no further chatting; the user must refresh to start a new session.
     const handleConsentDeny = (index: number) => {
-        setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, denied: true } : m)));
+        deniedRef.current = true;
+        setSessionDenied(true);
+        setIsLoading(false);
+        setMessages((prev) =>
+            prev.map((m, i) => (i === index ? { role: 'bot', text: CONSENT_DENIED_MESSAGE } : m)),
+        );
     };
 
     return (
@@ -972,13 +993,15 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             type="text"
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Type your message to Pratiksha..."
-                            disabled={isLoading}
+                            placeholder={sessionDenied
+                                ? 'Session ended — refresh the page to start a new chat.'
+                                : 'Type your message to Pratiksha...'}
+                            disabled={isLoading || sessionDenied}
                             className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
                         />
                         <button
                             type="submit"
-                            disabled={!inputText.trim() || isLoading}
+                            disabled={!inputText.trim() || isLoading || sessionDenied}
                             className="h-12 w-12 flex items-center justify-center rounded-xl text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5"
                             style={{ background: BLUE }}
                         >
