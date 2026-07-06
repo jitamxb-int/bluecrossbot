@@ -12,8 +12,8 @@ if [ ! -f backend/.env ]; then
 fi
 
 echo "Git pulling latest changes..."
-git switch jitam_dev
-git pull origin jitam_dev
+git pull origin master
+
 
 echo "📦 Building and starting containers (backend + frontend + admin-frontend + upload-frontend)..."
 # Each frontend's VITE_* is read from its own <app>/.env and baked at BUILD time by
