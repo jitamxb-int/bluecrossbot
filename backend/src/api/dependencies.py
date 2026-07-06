@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request, status
 
+from src.services.admin.service import AdminAuthService
 from src.services.chat.service import ChatService
 from src.services.config.service import ConfigService
 from src.services.feedback.service import FeedbackService
@@ -68,6 +69,20 @@ def get_config_service(request: Request) -> ConfigService:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Configuration service is unavailable: {reason}",
+        )
+    return service
+
+
+def get_admin_auth_service(request: Request) -> AdminAuthService:
+    service = getattr(request.app.state, "admin_auth_service", None)
+    if service is None:
+        reason = (
+            getattr(request.app.state, "chat_unavailable_reason", None)
+            or "MongoDB is not configured (set MONGODB_URI)."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Admin auth is unavailable: {reason}",
         )
     return service
 

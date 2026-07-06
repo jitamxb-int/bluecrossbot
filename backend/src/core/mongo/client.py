@@ -16,6 +16,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from src.core.config import Settings
+from src.storage.mongo.admin import AdminUser
 from src.storage.mongo.config import AppConfig
 from src.storage.mongo.feedback import SessionFeedback
 from src.storage.mongo.session import ChatSession
@@ -47,5 +48,5 @@ async def init_session_store(client: AsyncMongoClient, settings: Settings) -> No
     """
     await init_beanie(
         database=client[settings.mongodb_db],
-        document_models=[ChatSession, SessionFeedback, AppConfig],
+        document_models=[ChatSession, SessionFeedback, AppConfig, AdminUser],
     )

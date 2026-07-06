@@ -6,6 +6,7 @@ import videosReducer from '../features/slices/videosSlice';
 import ingestionReducer from '../features/slices/ingestionSlice';
 import healthReducer from '../features/slices/healthSlice';
 import sessionConfigReducer from '../features/slices/sessionConfigSlice';
+import authReducer from '../features/slices/authSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     ingestion: ingestionReducer,
     health: healthReducer,
     sessionConfig: sessionConfigReducer,
+    auth: authReducer,
   },
 });
 

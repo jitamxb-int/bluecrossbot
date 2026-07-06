@@ -26,6 +26,7 @@ from src.core.config import Settings, get_settings
 from src.core.logging.setup import RequestIDMiddleware, configure_logging, get_logger
 from src.core.mongo.client import create_mongo_client, init_session_store
 from src.core.vector_db.client import create_qdrant_client
+from src.services.admin.service import AdminAuthService
 from src.services.chat.service import ChatService
 from src.services.chunking.service import ChunkingService
 from src.services.config.service import ConfigService
@@ -40,6 +41,7 @@ from src.services.llm.errors import LLMError
 from src.services.llm.openai_chat import OpenAIChatProvider
 from src.services.retrieval.service import RetrievalService
 from src.services.vectorstore.service import VectorAdminService
+from src.storage.mongo.admin import AdminRepository
 from src.storage.mongo.config import ConfigRepository
 from src.storage.mongo.feedback import FeedbackRepository
 from src.storage.mongo.session import SessionRepository
@@ -120,6 +122,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.chat_service = None
     app.state.feedback_service = None
     app.state.config_service = None
+    app.state.admin_auth_service = None
     app.state.chat_unavailable_reason = None
 
     # Best-effort collection bootstrap; readiness probe reflects actual health.
@@ -145,6 +148,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.feedback_service = FeedbackService(FeedbackRepository())
             app.state.config_service = ConfigService(ConfigRepository())
+            admin_repo = AdminRepository()
+            await admin_repo.ensure_default_admin(
+                settings.admin_default_email, settings.admin_default_password
+            )
+            app.state.admin_auth_service = AdminAuthService(admin_repo)
             logger.info("mongo_session_store_ready", database=settings.mongodb_db)
         except Exception as exc:  # noqa: BLE001
             logger.exception("mongo_init_failed", error=str(exc))
