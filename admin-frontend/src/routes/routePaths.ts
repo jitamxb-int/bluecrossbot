@@ -1,4 +1,6 @@
 export const ROUTES = {
+  LOGIN: '/login',
+  CHANGE_PASSWORD: '/change-password',
   DASHBOARD: '/dashboard',
   SESSIONS: '/sessions',
   TRANSCRIPT: '/transcript/:sessionId',

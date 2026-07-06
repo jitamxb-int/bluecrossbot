@@ -6,6 +6,9 @@ import Sessions from '../pages/Sessions';
 import TranscriptPage from '../pages/TranscriptPage';
 import FeedbackLogs from '../pages/FeedbackLogs';
 import SessionConfigPage from '../pages/SessionConfigPage';
+import Login from '../pages/Login';
+import ChangePassword from '../pages/ChangePassword';
+import ProtectedRoute from './ProtectedRoute';
 // import ProductsPage       from '../pages/Products/ProductsPage';
 // import ProductIngestPage  from '../pages/Products/ProductIngestPage';
 // import VideosPage         from '../pages/Videos/VideosPage';
@@ -17,13 +20,17 @@ import SessionConfigPage from '../pages/SessionConfigPage';
 
 const AppRoutes: React.FC = () => (
   <Routes>
-    <Route path="/" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
-    <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
-    <Route path={ROUTES.SESSIONS} element={<Sessions />} />
-    <Route path={ROUTES.TRANSCRIPT} element={<TranscriptPage />} />
-    <Route path={ROUTES.FEEDBACK_LOGS} element={<FeedbackLogs />} />
-    <Route path={ROUTES.SESSION_CONFIG} element={<SessionConfigPage />} />
-    <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
+    <Route path={ROUTES.LOGIN} element={<Login />} />
+    <Route element={<ProtectedRoute />}>
+      <Route path="/" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
+      <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
+      <Route path={ROUTES.SESSIONS} element={<Sessions />} />
+      <Route path={ROUTES.TRANSCRIPT} element={<TranscriptPage />} />
+      <Route path={ROUTES.FEEDBACK_LOGS} element={<FeedbackLogs />} />
+      <Route path={ROUTES.SESSION_CONFIG} element={<SessionConfigPage />} />
+      <Route path={ROUTES.CHANGE_PASSWORD} element={<ChangePassword />} />
+      <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
+    </Route>
     {/* <Route path={ROUTES.PRODUCTS}        element={<ProductsPage />} />
     <Route path={ROUTES.PRODUCT_INGEST}  element={<ProductIngestPage />} />
     <Route path={ROUTES.VIDEOS}          element={<VideosPage />} />

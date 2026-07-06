@@ -1,7 +1,8 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
-// import { logout } from '@/store/slices/authSlice';
+import { logout } from '../../features/thunks/authThunks';
+import { selectAuthUser } from '../../features/selectors/authSelectors';
 import {
   LayoutDashboard,
   FileText,
@@ -15,7 +16,8 @@ import {
   Clock,
   Repeat,
   Hourglass,
-  PhoneIncoming
+  PhoneIncoming,
+  KeyRound
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -50,13 +52,14 @@ const navItems = [
   { path: '/sessions', label: 'Session Logs', icon: Phone },
   { path: '/ai-feedback-log', label: 'AI Feedback Log', icon: Briefcase }, // New Link
   { path: '/session-config', label: 'Session Config', icon: Clock },
+  { path: '/change-password', label: 'Change Credentials', icon: KeyRound },
 ];
 
 const AdminLayout = ({ children }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  // const { user } = useAppSelector((state) => state.auth);
+  const user = useAppSelector(selectAuthUser);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   
@@ -68,8 +71,8 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   });
 
   const handleLogout = () => {
-    // dispatch(logout());
-    navigate('/login');
+    dispatch(logout());
+    navigate('/login', { replace: true });
   };
 
   const handleSaveConfig = () => {
@@ -139,6 +142,18 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
             );
           })}
         </nav>
+
+        {/* Logout (always visible, pinned to the bottom of the sidebar) */}
+        <div className="p-3 border-t border-border">
+          <button
+            onClick={handleLogout}
+            title={isCollapsed ? 'Logout' : undefined}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span>Logout</span>}
+          </button>
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -149,11 +164,11 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
             <DropdownMenuTrigger className="flex items-center gap-3 cursor-pointer outline-none">
               <Avatar className="h-9 w-9">
                 <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                  {/* {user?.name ? getInitials(user.name) : 'U'} */}
+                  {user?.email ? user.email.slice(0, 2).toUpperCase() : 'AD'}
                 </AvatarFallback>
               </Avatar>
               <span className="font-medium text-foreground">
-                {/* {user?.name || 'User'} */}
+                {user?.email || 'Admin'}
               </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">

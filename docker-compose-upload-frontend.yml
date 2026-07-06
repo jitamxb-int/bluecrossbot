@@ -1,0 +1,11 @@
+services:
+  upload-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-upload-frontend
+      target: upload-frontend
+    container_name: bluecross_upload_frontend
+    env_file: upload-frontend/.env
+    ports:
+      - "4023:80"
+    restart: unless-stopped

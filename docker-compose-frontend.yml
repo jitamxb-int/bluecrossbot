@@ -1,0 +1,11 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-frontend
+      target: frontend
+    container_name: bluecross_frontend
+    env_file: frontend/.env
+    ports:
+      - "4021:80"
+    restart: unless-stopped
