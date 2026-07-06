@@ -14,7 +14,7 @@ fi
 echo "Git pulling latest changes..."
 git pull origin master
 
-echo "📦 Building and starting containers (backend + frontend + admin-frontend + upload-frontend)..."
+echo "📦 Building and starting containers (admin-frontend)..."
 # Each frontend's VITE_* is read from its own <app>/.env and baked at BUILD time by
 # Vite (e.g. frontend/.env: VITE_API_URL=http://<host>:4020). Changing a value
 # requires a rebuild (this --build handles it).
