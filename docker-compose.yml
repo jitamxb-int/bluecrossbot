@@ -10,6 +10,7 @@ services:
       - "4020:4020"
     volumes:
       - ./logs:/app/logs
+    restart: unless-stopped
 
   frontend:
     build:
@@ -20,6 +21,7 @@ services:
     env_file: frontend/.env
     ports:
       - "4021:80"
+    restart: unless-stopped
 
   admin-frontend:
     build:
@@ -30,7 +32,8 @@ services:
     env_file: admin-frontend/.env
     ports:
       - "4022:80"
-
+    restart: unless-stopped
+    
   upload-frontend:
     build:
       context: .
@@ -40,3 +43,4 @@ services:
     env_file: upload-frontend/.env
     ports:
       - "4023:80"
+    restart: unless-stopped
