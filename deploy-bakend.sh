@@ -18,7 +18,7 @@ echo "📦 Building and starting containers (backend + frontend + admin-frontend
 # Each frontend's VITE_* is read from its own <app>/.env and baked at BUILD time by
 # Vite (e.g. frontend/.env: VITE_API_URL=http://<host>:4020). Changing a value
 # requires a rebuild (this --build handles it).
-docker compose -f docker-compose.yml up -d --build
+docker compose -f docker-compose-backend.yml up -d --build
 
 echo "🧹 Cleaning up docker..."
 docker system prune -a -f

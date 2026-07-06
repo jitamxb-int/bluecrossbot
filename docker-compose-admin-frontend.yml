@@ -1,0 +1,12 @@
+services:
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-admin-frontend
+      target: admin-frontend
+    container_name: bluecross_admin_frontend
+    env_file: admin-frontend/.env
+    ports:
+      - "4022:80"
+    restart: unless-stopped
+    

@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile-backend
+    container_name: bluecross_backend
+    env_file: backend/.env
+      # Override so the backend reaches Qdrant over the compose network.
+    ports:
+      - "4020:4020"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
