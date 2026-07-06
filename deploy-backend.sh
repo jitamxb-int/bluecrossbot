@@ -12,11 +12,9 @@ if [ ! -f backend/.env ]; then
 fi
 
 echo "Git pulling latest changes..."
-# git pull origin master
-git switch jitam_dev
-git pull origin jitam_dev
+git pull origin master
 
-echo "📦 Building and starting containers (backend + frontend + admin-frontend + upload-frontend)..."
+echo "📦 Building and starting containers (backend)..."
 # Each frontend's VITE_* is read from its own <app>/.env and baked at BUILD time by
 # Vite (e.g. frontend/.env: VITE_API_URL=http://<host>:4020). Changing a value
 # requires a rebuild (this --build handles it).
