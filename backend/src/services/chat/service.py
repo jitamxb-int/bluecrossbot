@@ -50,7 +50,7 @@ SESSION_EXPIRED_MESSAGE = (
     "Your chat session has reached the maximum allowed duration and has now ended. "
     "Please refresh the page to start a new session. "
     "If you require any additional information or assistance, feel free to email us at "
-    "abcdummy@gmail.com, and our team will get back to you as soon as possible."
+    "info@bluecrosslabs.com, and our team will get back to you as soon as possible."
 )
 
 # After more than this many questions about the SAME product in one session, the
@@ -58,7 +58,7 @@ SESSION_EXPIRED_MESSAGE = (
 PRODUCT_QUERY_LIMIT = 5
 EMAIL_SUPPORT_MESSAGE = (
     "If you require any additional information or assistance regarding this "
-    "product, please feel free to email us at abcdummy@gmail.com. Our team will "
+    "product, please feel free to email us at info@bluecrosslabs.com. Our team will "
     "be happy to assist you and will get back to you as soon as possible."
 )
 
@@ -77,7 +77,7 @@ _SYSTEM_INSTRUCTIONS = (
     "guess, infer, or fabricate. Reply with:\n"
     "  'I'm sorry, I don't have enough information to answer that question at the moment. "
     "If you need a more detailed or prompt response, please feel free to email us at "
-    "abcdummy@gmail.com, and our team will be happy to assist you.'\n"
+    "info@bluecrosslabs.com, and our team will be happy to assist you.'\n"
     "Rephrase naturally, but keep the meaning: you lack the data, you won't "
     "invent an answer, and the user can reach out by email for further help. "
     "Return empty product_ids, video_ids, and source_ids in this case.\n"
