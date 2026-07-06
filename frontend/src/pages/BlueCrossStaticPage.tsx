@@ -17,7 +17,7 @@ const CONSENT_DENIED_MESSAGE =
     'continue this conversation or provide further assistance through the chatbot. ' +
     'If you would like to start a new session, please refresh the page. If you ' +
     'require any additional information or assistance, feel free to email us at ' +
-    'abcdummy@gmail.com, and our team will get back to you as soon as possible.';
+    'info@bluecrosslabs.com, and our team will get back to you as soon as possible.';
  
 interface Video {
     title: string;
