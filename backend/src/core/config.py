@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     default_chunk_size: int = 600
     default_chunk_overlap: int = 100
 
+    # --- Admin portal auth (seeded on startup if the account doesn't exist) ---
+    admin_default_email: str = "admin@gmail.com"
+    admin_default_password: str = "123456"
+
     @field_validator("qdrant_api_key", "openai_base_url", "mongodb_uri", mode="before")
     @classmethod
     def _blank_to_none(cls, value: object) -> object:
