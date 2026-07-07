@@ -1005,7 +1005,20 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             className="h-12 w-12 flex items-center justify-center rounded-xl text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5"
                             style={{ background: BLUE }}
                         >
-                            <Send size={18} className="ml-1" />
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <line x1="12" y1="19" x2="12" y2="5" />
+                                <polyline points="5 12 12 5 19 12" />
+                            </svg>
                         </button>
                     </form>
                 </div>
@@ -1052,35 +1065,73 @@ export default function BlueCrossStaticPage({
         navigate('/blue_cross/chat');
     };
  
-    return (
+return (
         <div style={{ height: '100vh' }}>
             <BlueCrossUI authUser={authUser} timeLeft="" onBack={() => navigate('/blue_cross')}>
                 {!chatOpen && !showDisclaimer && (
-                    <div className="fixed bottom-6 right-6 z-50">
-                        <button
-                            onClick={openChatFlow}
-                            className="group relative w-16 h-16 rounded-full flex items-center justify-center
-                                transition-transform hover:scale-110 active:scale-95
-                                border-4 border-white/80 shadow-xl"
-                            style={{
-                                background: `linear-gradient(135deg, ${BLUE} 0%, ${BLUE_L} 100%)`,
-                                boxShadow: `0 6px 28px rgba(27,61,143,0.50)`,
-                            }}
+                    <div
+                        className="group fixed bottom-6 right-6 z-50"
+                        style={{ animation: 'avatarIn 0.45s ease-out both' }}
+                    >
+                        {/* Tooltip — lives on the wrapper so it isn't clipped by the button's overflow-hidden */}
+                        <span
+                            className="absolute right-full top-1/2 -translate-y-1/2 mr-4 px-3 py-1.5 rounded-lg text-xs font-bold
+                                whitespace-nowrap opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0
+                                transition-all duration-200 pointer-events-none border shadow-md bg-white"
+                            style={{ color: BLUE, borderColor: `${BLUE}25` }}
                         >
+                            Chat with Pratiksha
+                        </span>
+
+                        {/* Gentle floating wrapper */}
+                        <div style={{ animation: 'avatarFloat 3.5s ease-in-out infinite' }}>
+                            {/* Soft glow behind the avatar */}
                             <span
-                                className="absolute right-full mr-4 px-3 py-1.5 rounded-lg text-xs font-bold
-                                    whitespace-nowrap opacity-0 group-hover:opacity-100
-                                    transition-opacity pointer-events-none border shadow-sm bg-white"
-                                style={{ color: BLUE, borderColor: `${BLUE}25` }}
+                                className="absolute inset-0 rounded-full pointer-events-none"
+                                style={{
+                                    background: `radial-gradient(circle, ${BLUE_L}70 0%, transparent 70%)`,
+                                    filter: 'blur(12px)',
+                                    transform: 'scale(1.35)',
+                                    animation: 'avatarGlow 3s ease-in-out infinite',
+                                }}
+                            />
+                            <button
+                                onClick={openChatFlow}
+                                className="relative w-20 h-20 rounded-full flex items-center justify-center
+                                    transition-transform hover:scale-105 active:scale-95
+                                    border-4 border-white/90 overflow-hidden"
+                                style={{
+                                    background: `linear-gradient(135deg, ${BLUE} 0%, ${BLUE_L} 100%)`,
+                                    boxShadow: `0 8px 30px rgba(27,61,143,0.50), 0 0 18px rgba(58,107,196,0.40)`,
+                                }}
                             >
-                                Chat with Pratiksha
-                            </span>
-                            <div className="relative w-7 h-7">
-                                <div className="absolute left-1/2 -translate-x-1/2 top-0 w-2 h-full bg-white rounded-sm" />
-                                <div className="absolute top-1/2 -translate-y-1/2 left-0 h-2 w-full bg-white rounded-sm" />
-                            </div>
-                            <span className="absolute inset-0 rounded-full opacity-25 animate-ping" style={{ background: BLUE_L }} />
-                        </button>
+                                <img
+                                    src="/ai_avatar.png"
+                                    alt="Chat with Pratiksha"
+                                    className="w-full h-full object-cover rounded-full"
+                                />
+                            </button>
+                            {/* Pulse ring */}
+                            <span
+                                className="absolute inset-0 rounded-full opacity-30 animate-ping pointer-events-none"
+                                style={{ background: BLUE_L }}
+                            />
+                        </div>
+
+                        <style>{`
+                            @keyframes avatarIn {
+                                0%   { opacity: 0; transform: scale(0.6) translateY(16px); }
+                                100% { opacity: 1; transform: scale(1) translateY(0); }
+                            }
+                            @keyframes avatarFloat {
+                                0%, 100% { transform: translateY(0); }
+                                50%      { transform: translateY(-6px); }
+                            }
+                            @keyframes avatarGlow {
+                                0%, 100% { opacity: 0.5; transform: scale(1.3); }
+                                50%      { opacity: 0.8; transform: scale(1.45); }
+                            }
+                        `}</style>
                     </div>
                 )}
                 {showDisclaimer && (
