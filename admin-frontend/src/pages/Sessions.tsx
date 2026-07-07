@@ -60,7 +60,7 @@ const Sessions = () => {
       offset,
       status: statusFilter || undefined,
       sortBy: 'started_at',
-      sortOrder: 'asc',
+      sortOrder: 'desc',
       ...toApiRange(range),
     }));
   }, [dispatch, pageSize, offset, statusFilter, range.start, range.end, rangeInvalid, refreshKey]);
