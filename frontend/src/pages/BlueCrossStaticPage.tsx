@@ -937,9 +937,9 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
             <div
-                className="w-[650px] h-[750px] rounded-2xl overflow-hidden shadow-2xl border flex flex-col"
+                className="w-[95vw] max-w-[720px] h-[82vh] max-h-[620px] rounded-2xl overflow-hidden shadow-2xl border flex flex-col"
                 style={{ background: 'white', borderColor: '#DDEAFF' }}
             >
                 {/* Header */}
