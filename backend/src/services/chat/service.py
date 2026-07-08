@@ -361,8 +361,11 @@ class ChatService:
         if not target_key:
             return descriptive_map
 
+        # Dense-only (cosine) so `pi_top` is comparable to the cosine-calibrated
+        # `pi_relevance_threshold`. Hybrid RRF scores would be rank-derived and make
+        # the threshold meaningless (see HCP-consent note in answer_stream).
         pi_points = await self._retrieval.search(
-            standalone, top_k, {"product_key": target_key, "pdf_type": "PI"}
+            standalone, top_k, {"product_key": target_key, "pdf_type": "PI"}, hybrid=False
         )
         pi_top = (pi_points[0].score or 0.0) if pi_points else None
         pi_sufficient = pi_points and (pi_top or 0.0) >= self._settings.pi_relevance_threshold
@@ -371,7 +374,7 @@ class ChatService:
             chosen, used = pi_points, "PI"
         else:
             pil_points = await self._retrieval.search(
-                standalone, top_k, {"product_key": target_key, "pdf_type": "PIL"}
+                standalone, top_k, {"product_key": target_key, "pdf_type": "PIL"}, hybrid=False
             )
             chosen = pil_points or pi_points
             used = "PIL" if pil_points else "PI"
@@ -619,15 +622,19 @@ class ChatService:
             points = await self._retrieval.search(standalone, top_k)
             logger.info(f"Retrieved {len(points)} points from vector search")
 
-            # HCP-consent signal is decided from what retrieval SURFACED (blended),
-            # BEFORE PI-priority reshaping — so scoping/fallback can never hide that
-            # PDF content was retrieved and silently turn off the blur. A relevance
-            # floor excludes weak neighbors (greetings/chit-chat match PDF chunks only
-            # at very low scores, so they must NOT be blurred).
+            # HCP-consent signal. This MUST be decided on a cosine scale: the main
+            # `points` above come from hybrid (RRF) search, whose scores are
+            # rank-derived and cannot express relevance (a greeting's top-ranked PDF
+            # chunk gets the same score as a real hit). So we run a dedicated
+            # dense-only, PDF-filtered probe and compare its cosine scores against the
+            # cosine floor — greetings/chit-chat match PDF chunks only weakly (well
+            # below the floor) and are therefore NOT blurred.
+            pdf_probe = await self._retrieval.search(
+                standalone, 3, {"source_url": "pdf"}, hybrid=False
+            )
             retrieval_has_pdf = any(
-                ((pt.payload or {}).get("source_url") or "").lower() == "pdf"
-                and (pt.score or 0.0) >= self._settings.pdf_consent_min_score
-                for pt in points
+                (pt.score or 0.0) >= self._settings.pdf_consent_min_score
+                for pt in pdf_probe
             )
 
             descriptive_map, product_map, video_map = _split_by_type(points)

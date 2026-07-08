@@ -7,8 +7,13 @@ import DisclaimerModal from '@/components/DisclaimerModal';
 const BLUE   = '#1B3D8F';
 const BLUE_L = '#3A6BC4';
 const BLUE_X = '#EEF3FB';
-// Backend base URL comes from the .env (VITE_API_URL); falls back to localhost for dev.
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Backend base URL. When embedded as a widget, the loader passes the partner's
+// backend URL via `window.__BCB_API_BASE__` (see src/widget/main.tsx); otherwise
+// it comes from the .env (VITE_API_URL, baked at build), falling back to localhost.
+const API_BASE =
+    (typeof window !== 'undefined' && (window as any).__BCB_API_BASE__) ||
+    import.meta.env.VITE_API_URL ||
+    'http://localhost:8000';
 const API_URL = `${API_BASE}/api/v1/chat`;
 
 // Shown in place of the (blurred) RAG response when the user denies HCP consent.
@@ -937,10 +942,17 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+            style={{ animation: 'bcbFadeIn 0.25s ease-out' }}
+        >
             <div
                 className="w-[95vw] max-w-[720px] h-[82vh] max-h-[620px] rounded-2xl overflow-hidden shadow-2xl border flex flex-col"
-                style={{ background: 'white', borderColor: '#DDEAFF' }}
+                style={{
+                    background: 'white',
+                    borderColor: '#DDEAFF',
+                    animation: 'bcbPopIn 0.3s cubic-bezier(0.16,1,0.3,1) both',
+                }}
             >
                 {/* Header */}
                 <div
@@ -1025,6 +1037,11 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
  
             <style>{`
+                @keyframes bcbFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes bcbPopIn {
+                    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+                    to   { opacity: 1; transform: translateY(0)    scale(1); }
+                }
                 @keyframes slideIn {
                     from { opacity: 0; transform: translateY(10px); }
                     to   { opacity: 1; transform: translateY(0); }
@@ -1038,40 +1055,58 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     );
 };
  
-export default function BlueCrossStaticPage({
-    authUser,
-    onSignOut,
+/**
+ * The self-contained chat widget: floating launcher avatar + disclaimer modal +
+ * chat overlay. Owns all of its own state and has NO dependency on the marketing
+ * landing page (`BlueCrossUI`) or the router — so it can be reused both inside the
+ * `/blue_cross/chat` page AND standalone inside the embeddable iframe widget.
+ *
+ * - `onDisclaimerReject`: what to do when the user rejects the disclaimer. The page
+ *   navigates to the full chat route; the embed just dismisses (defaults to that).
+ * - `onOpenChange`: fires `true` whenever the disclaimer or chat overlay is visible
+ *   and `false` when both are closed — the iframe loader uses it to resize.
+ */
+export function ChatWidget({
+    onDisclaimerReject,
+    onOpenChange,
+    onLauncherHover,
 }: {
-    authUser: any;
-    onSignOut: () => void;
+    onDisclaimerReject?: () => void;
+    onOpenChange?: (open: boolean) => void;
+    onLauncherHover?: (hovering: boolean) => void;
 }) {
-    const navigate = useNavigate();
     const [showDisclaimer, setShowDisclaimer] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
- 
+
+    // Report expanded/collapsed so an embedding iframe can grow/shrink to match.
+    useEffect(() => {
+        onOpenChange?.(showDisclaimer || chatOpen);
+    }, [showDisclaimer, chatOpen, onOpenChange]);
+
     const openChatFlow = () => {
         setShowDisclaimer(true);
     };
- 
+
     const handleAccept = () => {
         setShowDisclaimer(false);
         setTimeout(() => {
             setChatOpen(true);
         }, 0);
     };
- 
+
     const handleReject = () => {
         setShowDisclaimer(false);
-        navigate('/blue_cross/chat');
+        onDisclaimerReject?.();
     };
- 
-return (
-        <div style={{ height: '100vh' }}>
-            <BlueCrossUI authUser={authUser} timeLeft="" onBack={() => navigate('/blue_cross')}>
-                {!chatOpen && !showDisclaimer && (
+
+    return (
+        <>
+            {!chatOpen && !showDisclaimer && (
                     <div
                         className="group fixed bottom-6 right-6 z-50"
                         style={{ animation: 'avatarIn 0.45s ease-out both' }}
+                        onMouseEnter={() => onLauncherHover?.(true)}
+                        onMouseLeave={() => onLauncherHover?.(false)}
                     >
                         {/* Tooltip — lives on the wrapper so it isn't clipped by the button's overflow-hidden */}
                         <span
@@ -1083,8 +1118,10 @@ return (
                             Chat with Pratiksha
                         </span>
 
-                        {/* Gentle floating wrapper */}
-                        <div style={{ animation: 'avatarFloat 3.5s ease-in-out infinite' }}>
+                        {/* Gentle floating wrapper — paused on hover so the bubble is
+                            static while hovered (a moving hit-box under a still cursor
+                            toggles :hover and flickers the label/reveal). */}
+                        <div className="bcb-launcher-float" style={{ animation: 'avatarFloat 3.5s ease-in-out infinite' }}>
                             {/* Soft glow behind the avatar */}
                             <span
                                 className="absolute inset-0 rounded-full pointer-events-none"
@@ -1119,6 +1156,8 @@ return (
                         </div>
 
                         <style>{`
+                            /* Freeze the float while hovering so the hit-box stays put. */
+                            .group:hover .bcb-launcher-float { animation-play-state: paused !important; }
                             @keyframes avatarIn {
                                 0%   { opacity: 0; transform: scale(0.6) translateY(16px); }
                                 100% { opacity: 1; transform: scale(1) translateY(0); }
@@ -1134,13 +1173,30 @@ return (
                         `}</style>
                     </div>
                 )}
-                {showDisclaimer && (
-                    <DisclaimerModal
-                        onAccept={handleAccept}
-                        onReject={handleReject}
-                    />
-                )}
-                {chatOpen && <ChatOverlay onClose={() => setChatOpen(false)} />}
+            {showDisclaimer && (
+                <DisclaimerModal
+                    onAccept={handleAccept}
+                    onReject={handleReject}
+                />
+            )}
+            {chatOpen && <ChatOverlay onClose={() => setChatOpen(false)} />}
+        </>
+    );
+}
+
+export default function BlueCrossStaticPage({
+    authUser,
+    onSignOut,
+}: {
+    authUser: any;
+    onSignOut: () => void;
+}) {
+    const navigate = useNavigate();
+
+    return (
+        <div style={{ height: '100vh' }}>
+            <BlueCrossUI authUser={authUser} timeLeft="" onBack={() => navigate('/blue_cross')}>
+                <ChatWidget onDisclaimerReject={() => navigate('/blue_cross/chat')} />
             </BlueCrossUI>
         </div>
     );
