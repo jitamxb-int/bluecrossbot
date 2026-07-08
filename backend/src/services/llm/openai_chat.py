@@ -121,6 +121,16 @@ _CHAT_RESPONSE_SCHEMA = {
                         "to ground the answer; [] if none (e.g. greetings/chit-chat)."
                     ),
                 },
+                "response_type": {
+                    "type": "string",
+                    "enum": ["answer", "chitchat", "no_info"],
+                    "description": (
+                        "'answer' = every claim is grounded in [RETRIEVED CONTEXT]; "
+                        "'chitchat' = greeting/social/meta; "
+                        "'no_info' = the context does NOT contain what's needed to answer "
+                        "(never answer such questions from outside/world knowledge)."
+                    ),
+                },
             },
             "required": [
                 "answer",
@@ -128,6 +138,7 @@ _CHAT_RESPONSE_SCHEMA = {
                 "product_ids",
                 "video_ids",
                 "source_ids",
+                "response_type",
             ],
         },
     },
@@ -173,6 +184,7 @@ class OpenAIChatProvider:
             "product_ids": data.get("product_ids", []),
             "video_ids": data.get("video_ids", []),
             "source_ids": data.get("source_ids", []),
+            "response_type": data.get("response_type", "answer"),
         }
 
     async def stream_structured(self, messages: list[dict]) -> AsyncIterator[dict]:
@@ -221,6 +233,7 @@ class OpenAIChatProvider:
                 "product_ids": data.get("product_ids", []),
                 "video_ids": data.get("video_ids", []),
                 "source_ids": data.get("source_ids", []),
+                "response_type": data.get("response_type", "answer"),
             }
         }
 

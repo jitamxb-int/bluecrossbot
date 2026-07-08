@@ -16,18 +16,29 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     FilterSelector,
+    Fusion,
+    FusionQuery,
     MatchAny,
     MatchValue,
+    Modifier,
     PayloadSchemaType,
     PointStruct,
+    Prefetch,
     ScoredPoint,
+    SparseVector,
+    SparseVectorParams,
     VectorParams,
 )
 
 from src.core.config import Settings
 from src.core.logging.setup import get_logger
+from src.services.embedding.sparse_provider import SparseEmbeddingProvider
 
 logger = get_logger(__name__)
+
+# Named vectors: dense (OpenAI embedding) + bm25 (sparse, for keyword recall).
+_DENSE = "dense"
+_SPARSE = "bm25"
 
 _DISTANCE_MAP: dict[str, Distance] = {
     "cosine": Distance.COSINE,
@@ -66,9 +77,16 @@ def _build_filter(metadata_filter: dict[str, Any] | None) -> Filter | None:
 
 
 class QdrantRepository:
-    def __init__(self, client: AsyncQdrantClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        client: AsyncQdrantClient,
+        settings: Settings,
+        sparse: SparseEmbeddingProvider | None = None,
+    ) -> None:
         self._client = client
         self._settings = settings
+        # When set, ingestion stores a BM25 sparse vector and retrieval goes hybrid.
+        self._sparse = sparse
 
     async def ensure_collection(
         self,
@@ -109,21 +127,55 @@ class QdrantRepository:
         size = vector_size or self._settings.vector_size
         metric = _resolve_distance(distance or self._settings.vector_distance)
 
+        # Named dense vector + a BM25 sparse vector (IDF applied at query time) so
+        # dense and keyword signals can be fused with RRF at search time.
         await self._client.create_collection(
             collection_name=name,
-            vectors_config=VectorParams(size=size, distance=metric),
+            vectors_config={_DENSE: VectorParams(size=size, distance=metric)},
+            sparse_vectors_config={_SPARSE: SparseVectorParams(modifier=Modifier.IDF)},
         )
         await self._ensure_payload_indexes(name)
         logger.info("collection_created", collection=name, vector_size=size, distance=metric.value)
 
     async def upsert_points(self, name: str, points: list[PointStruct]) -> int:
-        """Upsert points in configurable batches. Returns the number upserted."""
+        """Upsert points in configurable batches. Returns the number upserted.
+
+        Callers pass dense-only ``PointStruct``s (``vector`` = the dense embedding,
+        ``payload['text']`` = the chunk text). This remaps them to the named-vector
+        schema and — when a sparse provider is configured — attaches a BM25 sparse
+        vector computed from the chunk text, enabling hybrid retrieval. No caller
+        changes required.
+        """
+        points = self._to_named_vector_points(points)
         batch_size = max(1, self._settings.upsert_batch_size)
         for start in range(0, len(points), batch_size):
             batch = points[start : start + batch_size]
             await self._client.upsert(collection_name=name, points=batch, wait=True)
             logger.debug("upserted_batch", collection=name, count=len(batch), offset=start)
         return len(points)
+
+    def _to_named_vector_points(self, points: list[PointStruct]) -> list[PointStruct]:
+        """Convert dense-only points to named-vector points (+ BM25 sparse if enabled)."""
+        if self._sparse is None:
+            return [
+                PointStruct(id=p.id, vector={_DENSE: p.vector}, payload=p.payload)
+                for p in points
+            ]
+        texts = [(p.payload or {}).get("text", "") for p in points]
+        sparse_vectors = self._sparse.embed_documents(texts)
+        rebuilt: list[PointStruct] = []
+        for point, (indices, values) in zip(points, sparse_vectors, strict=True):
+            rebuilt.append(
+                PointStruct(
+                    id=point.id,
+                    vector={
+                        _DENSE: point.vector,
+                        _SPARSE: SparseVector(indices=indices, values=values),
+                    },
+                    payload=point.payload,
+                )
+            )
+        return rebuilt
 
     async def delete_points_by_field(self, name: str, field: str, values: list[str]) -> int:
         """Delete all points whose ``field`` matches any of ``values``. Returns count deleted.
@@ -167,18 +219,45 @@ class QdrantRepository:
         query_vector: list[float],
         top_k: int = 5,
         metadata_filter: dict[str, Any] | None = None,
+        query_text: str | None = None,
     ) -> list[ScoredPoint]:
-        """Top-k semantic search, optionally filtered by payload metadata.
+        """Top-k search, optionally filtered by payload metadata.
 
-        ``metadata_filter`` is a flat ``{field: value}`` dict of equality
-        constraints (e.g. ``{"doc_type": "product"}``). Returns the scored points
-        with their payloads attached.
+        When a sparse provider is configured and ``query_text`` is given, runs a
+        **hybrid** search — dense + BM25 sparse candidate pools fused with RRF — so
+        exact name/title matches surface even when dense ranks them low. Otherwise
+        falls back to dense-only. ``metadata_filter`` is a flat ``{field: value}``
+        equality dict (e.g. ``{"doc_type": "product"}``). Returns scored points with
+        payloads attached.
         """
+        flt = _build_filter(metadata_filter)
+
+        if self._sparse is not None and query_text:
+            indices, values = self._sparse.embed_query(query_text)
+            pool = max(top_k, self._settings.hybrid_prefetch_limit)
+            response = await self._client.query_points(
+                collection_name=name,
+                prefetch=[
+                    Prefetch(query=query_vector, using=_DENSE, limit=pool, filter=flt),
+                    Prefetch(
+                        query=SparseVector(indices=indices, values=values),
+                        using=_SPARSE,
+                        limit=pool,
+                        filter=flt,
+                    ),
+                ],
+                query=FusionQuery(fusion=Fusion.RRF),
+                limit=top_k,
+                with_payload=True,
+            )
+            return response.points
+
         response = await self._client.query_points(
             collection_name=name,
             query=query_vector,
+            using=_DENSE,
             limit=top_k,
-            query_filter=_build_filter(metadata_filter),
+            query_filter=flt,
             with_payload=True,
         )
         return response.points

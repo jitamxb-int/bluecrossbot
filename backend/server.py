@@ -32,6 +32,7 @@ from src.services.chunking.service import ChunkingService
 from src.services.config.service import ConfigService
 from src.services.embedding.errors import EmbeddingError
 from src.services.embedding.openai_provider import OpenAIEmbeddingProvider
+from src.services.embedding.sparse_provider import SparseEmbeddingProvider
 from src.services.feedback.service import FeedbackService
 from src.services.ingestion.pi_pil_service import PiPilIngestionService
 from src.services.ingestion.product_service import ProductIngestionService
@@ -80,7 +81,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("startup_begin", environment=settings.environment, app=settings.app_name)
 
     client = create_qdrant_client(settings)
-    repository = QdrantRepository(client, settings)
+    # BM25 sparse encoder for hybrid retrieval; best-effort so a load failure
+    # (e.g. offline model download) degrades to dense-only instead of crashing.
+    sparse_provider = None
+    if settings.hybrid_search_enabled:
+        try:
+            sparse_provider = SparseEmbeddingProvider(settings.sparse_model_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("sparse_model_load_failed", error=str(exc), detail="dense-only")
+    repository = QdrantRepository(client, settings, sparse=sparse_provider)
     embedding = OpenAIEmbeddingProvider(settings)
     ingestion_service = IngestionService(
         chunking=ChunkingService(),

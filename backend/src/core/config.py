@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     vector_size: int = 1536
     vector_distance: str = "Cosine"  # Cosine | Dot | Euclid
 
+    # --- Hybrid search (dense + BM25 sparse, fused via Qdrant RRF) ---
+    # When enabled, ingestion stores a BM25 sparse vector alongside the dense one
+    # and retrieval fuses both — so exact name/title lookups surface reliably.
+    # Disable to run dense-only (also the automatic fallback if fastembed fails).
+    hybrid_search_enabled: bool = True
+    sparse_model_name: str = "Qdrant/bm25"
+    hybrid_prefetch_limit: int = 50  # candidate pool per branch before fusion
+
     # --- OpenAI embeddings ---
     openai_api_key: str = ""
     openai_embedding_model: str = "text-embedding-3-small"
@@ -65,7 +73,7 @@ class Settings(BaseSettings):
 
     # --- Chat ---
     chat_history_window_turns: int = 10
-    chat_retrieval_top_k: int = 6
+    chat_retrieval_top_k: int = 30
     # Minimum similarity score for the linked PI document to be considered a
     # sufficient answer before falling back to the PIL. Corpus-dependent — tune
     # against real embeddings.
