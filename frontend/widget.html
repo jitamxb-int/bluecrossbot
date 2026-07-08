@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pratiksha Chat</title>
+    <meta name="robots" content="noindex" />
+    <style>
+      /* This page is loaded inside the embed iframe. Keep it transparent so only
+         the floating bubble / chat overlay is visible over the host site. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent !important;
+        height: 100%;
+        overflow: hidden;
+      }
+      #widget-root {
+        height: 100%;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="widget-root"></div>
+    <script type="module" src="/src/widget/main.tsx"></script>
+  </body>
+</html>

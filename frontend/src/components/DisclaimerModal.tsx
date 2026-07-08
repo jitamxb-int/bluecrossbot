@@ -11,13 +11,17 @@ interface DisclaimerModalProps {
 
 const DisclaimerModal: React.FC<DisclaimerModalProps> = ({ onAccept, onReject }) => {
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+            style={{ animation: 'bcbFadeIn 0.25s ease-out' }}
+        >
             <div
                 className="bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col"
                 style={{
                     width: '700px',
                     maxWidth: '100%',
                     maxHeight: '80vh',
+                    animation: 'bcbPopIn 0.3s cubic-bezier(0.16,1,0.3,1) both',
                 }}
             >
                 {/* Header */}
@@ -93,6 +97,14 @@ const DisclaimerModal: React.FC<DisclaimerModalProps> = ({ onAccept, onReject })
                     </button>
                 </div>
             </div>
+
+            <style>{`
+                @keyframes bcbFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes bcbPopIn {
+                    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+                    to   { opacity: 1; transform: translateY(0)    scale(1); }
+                }
+            `}</style>
         </div>
     );
 };

@@ -18,4 +18,14 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Two entry HTML pages: the main SPA and the embeddable widget. `public/widget.js`
+    // (the loader) is copied verbatim and needs no entry here.
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        widget: path.resolve(__dirname, "widget.html"),
+      },
+    },
+  },
 }));

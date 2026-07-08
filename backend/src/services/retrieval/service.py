@@ -37,8 +37,18 @@ class RetrievalService:
         query: str,
         top_k: int,
         metadata_filter: dict | None = None,
+        *,
+        hybrid: bool = True,
     ) -> list[ScoredPoint]:
-        """Embed ``query`` and return raw scored points (payloads attached)."""
+        """Embed ``query`` and return raw scored points (payloads attached).
+
+        ``hybrid=True`` (default) fuses dense + BM25 via RRF for best recall, but the
+        returned ``point.score`` is then a rank-derived RRF score (NOT a cosine
+        similarity). Pass ``hybrid=False`` to force the dense-only branch, whose
+        ``point.score`` IS a cosine similarity (0..1) — required by callers that
+        compare scores against a cosine-calibrated threshold (HCP-consent gate,
+        PI/PIL relevance).
+        """
         vectors = await self._embedding.embed_texts([query])
         if not vectors:
             return []
@@ -47,7 +57,8 @@ class RetrievalService:
             query_vector=vectors[0],
             top_k=top_k,
             metadata_filter=metadata_filter,
-            query_text=query,  # enables the BM25 branch of hybrid search
+            # query_text enables the BM25 branch; omit it to stay dense-only (cosine).
+            query_text=query if hybrid else None,
         )
 
     async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:
