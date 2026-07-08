@@ -62,6 +62,15 @@ EMAIL_SUPPORT_MESSAGE = (
     "be happy to assist you and will get back to you as soon as possible."
 )
 
+# Canonical refusal used whenever the model reports the answer isn't grounded in
+# the retrieved context (response_type == "no_info"). Kept identical to the
+# fallback wording embedded in the system prompt.
+NO_INFO_MESSAGE = (
+    "I'm sorry, I don't have enough information to answer that question at the moment. "
+    "If you need a more detailed or prompt response, please feel free to email us at "
+    "info@bluecrosslabs.com, and our team will be happy to assist you."
+)
+
 _SYSTEM_INSTRUCTIONS = (
     # ── ROLE ──────────────────────────────────────────────────────────
     "You are a helpful assistant for Blue Cross Laboratories.\n\n"
@@ -73,16 +82,30 @@ _SYSTEM_INSTRUCTIONS = (
 
     # ── 2. STRICT NO-HALLUCINATION RULE (highest priority) ────────────
     "## NO-HALLUCINATION RULE (HIGHEST PRIORITY)\n"
-    "If the [RETRIEVED CONTEXT] does NOT answer the user's question, do NOT "
-    "guess, infer, or fabricate. Reply with:\n"
+    "Never invent, guess, or fabricate facts that are NOT present in the "
+    "[RETRIEVED CONTEXT].\n"
+    "BUT — if the information needed to answer IS present in the context, you "
+    "MUST answer. This holds even when the relevant facts are spread across "
+    "several chunks, worded differently from the user's question, or need to "
+    "be pulled together into one clear reply. Combining, summarising, or "
+    "rephrasing facts that are actually in the context is NOT hallucination — "
+    "it is your job. Do NOT refuse just because the wording doesn't match the "
+    "question, or because one minor sub-detail is missing; answer the part the "
+    "context supports.\n"
+    "Use the fallback below ONLY when the context contains NO relevant "
+    "information about what the user asked — i.e. the answer is genuinely "
+    "absent, not merely phrased differently or requiring you to connect a "
+    "couple of stated facts. When in doubt and the context clearly supports an "
+    "answer, ANSWER rather than refuse.\n"
+    "Fallback (use ONLY when the answer is truly not in the context):\n"
     "  'I'm sorry, I don't have enough information to answer that question at the moment. "
     "If you need a more detailed or prompt response, please feel free to email us at "
     "info@bluecrosslabs.com, and our team will be happy to assist you.'\n"
     "Rephrase naturally, but keep the meaning: you lack the data, you won't "
     "invent an answer, and the user can reach out by email for further help. "
     "Return empty product_ids, video_ids, and source_ids in this case.\n"
-    "An honest 'I don't know' is always correct. A plausible but unsupported "
-    "answer is never acceptable.\n\n"
+    "An honest 'I don't know' is correct only when the context truly lacks the "
+    "answer. A plausible but unsupported answer is never acceptable.\n\n"
 
     # ── 3. COMPOSITION / INGREDIENT QUESTIONS (HIGH PRIORITY) ─────────
     "## COMPOSITION / INGREDIENT QUESTIONS\n"
@@ -494,6 +517,14 @@ class ChatService:
         source_tags = _normalize_tags(result.get("source_ids", []), "D")
         citations = _build_sources(descriptive_map, source_tags, products, videos)
 
+        # 6a. GROUNDING GUARD. If the model flagged the answer as ungrounded
+        #     (context lacks it), force the canonical refusal — never let a
+        #     world-knowledge answer through. (Keyed on the declared type, not on
+        #     empty ids, since valid dosage answers intentionally cite nothing.)
+        if result.get("response_type") == "no_info":
+            answer = NO_INFO_MESSAGE
+            products, videos, citations = [], [], ""
+
         # 7. SAVE (raw query + final answer).
         session = await self._sessions.append_turn(
             session_id=session_id,
@@ -675,6 +706,13 @@ class ChatService:
             videos = _resolve_videos(final.get("video_ids", []), video_map)
             source_tags = _normalize_tags(final.get("source_ids", []), "D")
             citations = _build_sources(descriptive_map, source_tags, products, videos)
+
+            # 7a. GROUNDING GUARD. If the model flagged the answer as ungrounded,
+            #     force the canonical refusal (the model was instructed to stream
+            #     that text for no_info, so the `done` answer stays consistent).
+            if final.get("response_type") == "no_info":
+                answer = NO_INFO_MESSAGE
+                products, videos, citations = [], [], ""
 
             # 8. SAVE (raw query + final answer).
             session = await self._sessions.append_turn(

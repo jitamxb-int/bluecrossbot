@@ -47,6 +47,7 @@ class RetrievalService:
             query_vector=vectors[0],
             top_k=top_k,
             metadata_filter=metadata_filter,
+            query_text=query,  # enables the BM25 branch of hybrid search
         )
 
     async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:

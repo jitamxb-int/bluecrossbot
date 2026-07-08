@@ -20,6 +20,7 @@ dependencies = [
     "httpx",
     "charset-normalizer",
     "beanie",
+    "fastembed>=0.8.0",
 ]
 
 [dependency-groups]
