@@ -21,6 +21,15 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
+
+    # Real static assets: serve the file or 404 — never fall back to index.html.
+    # Prevents a missing /widget.js from being returned as SPA HTML (which the
+    # browser then fails to execute as JavaScript).
+    location ~* \.(?:js|mjs|css|png|jpe?g|gif|svg|ico|webp|txt|json|map|woff2?|ttf)$ {
+        try_files $uri =404;
+    }
+
+    # SPA client-side routing fallback for everything else.
     location / { try_files $uri $uri/ /index.html; }
 }
 EOF
