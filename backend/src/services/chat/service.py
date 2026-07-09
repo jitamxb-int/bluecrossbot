@@ -622,19 +622,29 @@ class ChatService:
             points = await self._retrieval.search(standalone, top_k)
             logger.info(f"Retrieved {len(points)} points from vector search")
 
-            # HCP-consent signal. This MUST be decided on a cosine scale: the main
-            # `points` above come from hybrid (RRF) search, whose scores are
-            # rank-derived and cannot express relevance (a greeting's top-ranked PDF
-            # chunk gets the same score as a real hit). So we run a dedicated
-            # dense-only, PDF-filtered probe and compare its cosine scores against the
-            # cosine floor — greetings/chit-chat match PDF chunks only weakly (well
-            # below the floor) and are therefore NOT blurred.
-            pdf_probe = await self._retrieval.search(
-                standalone, 3, {"source_url": "pdf"}, hybrid=False
+            # HCP-consent signal. Decided on a comparable COSINE scale via a dense-only
+            # probe (the main `points` above come from hybrid/RRF search, whose scores
+            # are rank-derived and cannot express relevance). Consent is required ONLY
+            # when a PDF source is the MOST relevant source for this query — i.e. the
+            # answer will actually be grounded in PDF (HCP) content. A weakly-related
+            # PDF chunk that exists in the corpus but is out-ranked by a
+            # descriptive/product/video chunk (e.g. "who is the vice chairman?") must
+            # NOT trigger consent. Greetings/chit-chat stay below the floor too.
+            consent_probe = await self._retrieval.search(standalone, top_k, hybrid=False)
+
+            def _src(pt) -> str:
+                return ((pt.payload or {}).get("source_url") or "").lower()
+
+            pdf_top = max(
+                ((pt.score or 0.0) for pt in consent_probe if _src(pt) == "pdf"),
+                default=0.0,
             )
-            retrieval_has_pdf = any(
-                (pt.score or 0.0) >= self._settings.pdf_consent_min_score
-                for pt in pdf_probe
+            other_top = max(
+                ((pt.score or 0.0) for pt in consent_probe if _src(pt) != "pdf"),
+                default=0.0,
+            )
+            retrieval_has_pdf = (
+                pdf_top >= self._settings.pdf_consent_min_score and pdf_top >= other_top
             )
 
             descriptive_map, product_map, video_map = _split_by_type(points)
