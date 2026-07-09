@@ -1007,7 +1007,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             onChange={(e) => setInputText(e.target.value)}
                             placeholder={sessionDenied
                                 ? 'Session ended — refresh the page to start a new chat.'
-                                : 'Type your message to Pratiksha...'}
+                                : 'Type your message to Luna...'}
                             disabled={isLoading || sessionDenied}
                             className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
                         />

@@ -880,7 +880,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             type="text"
                             value={inputText}
                             onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Type your message to Pratiksha..."
+                            placeholder="Type your message to Luna..."
                             disabled={isLoading}
                             className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
                         />
