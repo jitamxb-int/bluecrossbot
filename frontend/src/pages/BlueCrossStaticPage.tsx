@@ -961,7 +961,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 >
                     <div className="flex items-center gap-3">
                         <span className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.9)]" />
-                        <span className="font-black text-white text-base tracking-widest uppercase">Pratiksha Chat</span>
+                        <span className="font-black text-white text-base tracking-widest uppercase">Luna Chat</span>
                     </div>
                     <button
                         onClick={onClose}
@@ -1115,7 +1115,7 @@ export function ChatWidget({
                                 transition-all duration-200 pointer-events-none border shadow-md bg-white"
                             style={{ color: BLUE, borderColor: `${BLUE}25` }}
                         >
-                            Chat with Pratiksha
+                            Need help? Ask Luna!
                         </span>
 
                         {/* Gentle floating wrapper — paused on hover so the bubble is
@@ -1144,7 +1144,7 @@ export function ChatWidget({
                             >
                                 <img
                                     src="/ai_avatar.png"
-                                    alt="Chat with Pratiksha"
+                                    alt="Need help? Ask Luna!"
                                     className="w-full h-full object-cover rounded-full"
                                 />
                             </button>

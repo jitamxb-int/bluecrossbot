@@ -1,24 +1,3 @@
-/*!
- * Blue Cross "Pratiksha" chat — embeddable widget loader.
- *
- * A partner site embeds the chatbot with ONE line:
- *
- *   <script src="https://YOUR-FRONTEND-HOST/widget.js"
- *           data-api-url="https://YOUR-PUBLIC-BACKEND-HOST"></script>
- *
- * This script injects a floating, fully style-isolated <iframe> that loads
- * `widget.html` from the same origin it was served from. The iframe is tiny (just
- * the launcher bubble) while the chat is closed — so the rest of the host page
- * stays clickable — and expands to fill the viewport while the chat is open, so
- * the chat modal renders exactly as it does on the Blue Cross site.
- *
- * Optional attributes:
- *   data-api-url   Public backend base URL (e.g. https://api.example.com). REQUIRED
- *                  for real embeds — the chat calls <api-url>/api/v1/chat. If omitted,
- *                  the widget falls back to its build-time VITE_API_URL.
- *   data-position  "bottom-right" (default) | "bottom-left".
- *   data-z-index   Stacking order of the iframe (default 2147483000).
- */
 (function () {
   "use strict";
 
@@ -68,7 +47,7 @@
   var HOVER_WIDTH = "340px";
 
   var iframe = document.createElement("iframe");
-  iframe.title = "Pratiksha Chat";
+  iframe.title = "Need help? Ask Luna!";
   iframe.setAttribute("allow", "microphone; clipboard-write");
   iframe.setAttribute("allowtransparency", "true");
   iframe.setAttribute("frameborder", "0");

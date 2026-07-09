@@ -844,7 +844,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 >
                     <div className="flex items-center gap-3">
                         <span className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.9)]" />
-                        <span className="font-black text-white text-base tracking-widest uppercase">Pratiksha Chat</span>
+                        <span className="font-black text-white text-base tracking-widest uppercase">Luna Chat</span>
                     </div>
                     <button
                         onClick={onClose}
@@ -982,7 +982,7 @@ export default function BlueCrossPage({
                                     transition-opacity pointer-events-none border shadow-sm bg-white"
                                 style={{ color: BLUE, borderColor: `${BLUE}25` }}
                             >
-                                Chat with Pratiksha
+                                Need help? Ask Luna!
                             </span>
                             <div className="relative w-7 h-7">
                                 <div className="absolute left-1/2 -translate-x-1/2 top-0 w-2 h-full bg-white rounded-sm" />
