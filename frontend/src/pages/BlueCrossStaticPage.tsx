@@ -16,6 +16,11 @@ const API_BASE =
     'http://localhost:8000';
 const API_URL = `${API_BASE}/api/v1/chat`;
 
+// Frontend-only proactive greeting shown the moment the chat opens (after the
+// user accepts the disclaimer). Never sent to the backend; the real session
+// still starts on the user's first message.
+const GREETING_MESSAGE = "👋 Hello! I'm Luna. How can I help you today?";
+
 // Shown in place of the (blurred) RAG response when the user denies HCP consent.
 const CONSENT_DENIED_MESSAGE =
     'You have chosen not to provide your consent. As a result, we are unable to ' +
@@ -787,7 +792,10 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [inputText, setInputText] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [sessionId, setSessionId] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
+    // Start "loading" so the typing indicator shows immediately; the greeting is
+    // revealed a moment later (see the mount effect below) so it reads like Luna
+    // is actually replying rather than a message that was there all along.
+    const [isLoading, setIsLoading] = useState(true);
     // Session-wide HCP consent. Once true, all HCP-gated messages (past and
     // future) are shown without blurring. Seeded from the backend session.
     const [hcpConsent, setHcpConsent] = useState(false);
@@ -801,6 +809,17 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading]);
+
+    // Proactive greeting: show the typing indicator briefly, then drop in Luna's
+    // welcome message so it feels like the bot is responding. Purely local — no
+    // backend call, and the real session still starts on the user's first message.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setMessages([{ role: 'bot', text: GREETING_MESSAGE }]);
+            setIsLoading(false);
+        }, 1000);
+        return () => clearTimeout(t);
+    }, []);
  
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
