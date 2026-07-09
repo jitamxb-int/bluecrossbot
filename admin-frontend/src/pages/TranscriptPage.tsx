@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Hash, MessageSquare, Clock, Bot, User, Loader2, X } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -39,6 +39,8 @@ const TranscriptPage = () => {
     const [selectedText, setSelectedText] = useState('');
     const [comment, setComment] = useState('');
     const [popoverPos, setPopoverPos] = useState({ x: 0, y: 0 });
+    const [dragging, setDragging] = useState(false);
+    const dragOffset = useRef({ x: 0, y: 0 });
     const [highlightFeedbackId] = useState<string | null>(location.state?.feedbackId ?? null);
 
     useEffect(() => {
@@ -59,6 +61,24 @@ const TranscriptPage = () => {
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }, [highlightFeedbackId, allFeedbacks, messages]);
+
+    // Feedback-popover drag handling. Kept above the early returns below so hook
+    // order stays constant across renders (React Rules of Hooks).
+    useEffect(() => {
+        if (!dragging) return;
+        const onMove = (e: MouseEvent) => {
+            const x = Math.min(Math.max(e.clientX - dragOffset.current.x, 0), window.innerWidth - 320);
+            const y = Math.min(Math.max(e.clientY - dragOffset.current.y, 0), window.innerHeight - 60);
+            setPopoverPos({ x, y });
+        };
+        const onUp = () => setDragging(false);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [dragging]);
 
     if (status === 'loading' && Object.keys(transcripts).length === 0) {
         return (
@@ -90,15 +110,25 @@ const TranscriptPage = () => {
         const selection = window.getSelection();
         const text = selection?.toString().trim();
         if (text && text.length > 2) {
+            // `fixed` positioning is viewport-relative, so use raw clientX/clientY
+            // (no scroll offset). Clamp so the popover always opens fully on-screen.
             setPopoverPos({
                 x: Math.min(e.clientX, window.innerWidth - 340),
-                y: e.clientY + window.scrollY + 12,
+                y: Math.min(e.clientY + 12, window.innerHeight - 260),
             });
             setSelectedText(text);
             setComment('');
             dispatch(clearCreateError());
             setShowPopover(true);
         }
+    };
+
+    // Drag the feedback popover by its header so the transcript underneath stays
+    // visible while writing feedback.
+    const startDrag = (e: React.MouseEvent) => {
+        e.preventDefault();
+        dragOffset.current = { x: e.clientX - popoverPos.x, y: e.clientY - popoverPos.y };
+        setDragging(true);
     };
 
     const handleSubmitComment = async () => {
@@ -231,13 +261,21 @@ const TranscriptPage = () => {
                     <>
                         <div className="fixed inset-0 z-[99]" onClick={() => setShowPopover(false)} />
                         <div
-                            className="fixed z-[100] p-4 rounded-xl bg-slate-900 text-white shadow-2xl w-80 ring-2 ring-blue-500"
+                            className={`fixed z-[100] p-4 rounded-xl bg-slate-900 text-white shadow-2xl w-80 ring-2 ring-blue-500 ${dragging ? 'select-none' : ''}`}
                             style={{ left: popoverPos.x, top: popoverPos.y }}
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-[10px] font-light text-slate-400 tracking-widest">ADD FEEDBACK</span>
-                                <button onClick={() => setShowPopover(false)} className="opacity-60 hover:opacity-100">
+                            <div
+                                className="flex justify-between items-center mb-2 -mx-4 -mt-4 px-4 pt-4 pb-2 cursor-move"
+                                onMouseDown={startDrag}
+                                title="Drag to move"
+                            >
+                                <span className="text-[10px] font-light text-slate-400 tracking-widest select-none">⠿ ADD FEEDBACK</span>
+                                <button
+                                    onClick={() => setShowPopover(false)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="opacity-60 hover:opacity-100"
+                                >
                                     <X size={14} />
                                 </button>
                             </div>
