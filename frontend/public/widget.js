@@ -44,7 +44,7 @@
   //                           back down the moment the banner is hidden/removed.
   //                           This is the ONLY thing that lifts the bubble by
   //                           default — no banner ⇒ normal bottom position.
-  //   data-offset-gap       : gap between the bubble and the banner top (default 12px)
+  //   data-offset-gap       : visible gap between the bubble and the banner (px, default 10)
   //   data-offset-bottom    : base gap from the bottom edge, always applied (default 0)
   //   data-offset-x         : gap from the left/right edge per data-position (default 0)
   function toLen(v) {
@@ -54,7 +54,14 @@
   }
   var baseBottom = toLen(script.getAttribute("data-offset-bottom"));
   var offsetX = toLen(script.getAttribute("data-offset-x"));
-  var gap = toLen(script.getAttribute("data-offset-gap") || "12");
+  // Desired VISIBLE gap (px) between the bubble and the top of the banner. Used
+  // arithmetically (not as a CSS length), so parse a plain number.
+  var gapPx = parseFloat(script.getAttribute("data-offset-gap"));
+  if (isNaN(gapPx)) gapPx = 10;
+  // The launcher bubble floats this many px INSIDE the bottom of its iframe
+  // (BlueCrossStaticPage launcher: `bottom-6` = 24px). We subtract it so the lift
+  // leaves only `gapPx` of visible space above the banner. Keep in sync with that class.
+  var BUBBLE_INSET = 24;
   var selector = (script.getAttribute("data-consent-selector") || "").trim();
   // Zero-config detection of a bottom-pinned consent/cookie bar is ON by default
   // (set data-consent-auto="off" to disable). An explicit data-consent-selector,
@@ -82,13 +89,13 @@
     "[id*='cookie'][id*='consent']"
   ];
 
-  // Bottom position for the collapsed bubble: the base offset, plus the measured
-  // banner clearance (+ gap) when a consent banner is detected below the bubble.
-  // Every calc() term MUST carry a unit — `calc(0 + 68px)` is invalid CSS and the
-  // browser silently drops it (baseBottom/gap come from toLen(), which is unit-safe).
+  // Bottom position for the collapsed bubble: the base offset plus the computed
+  // banner-clearance lift (autoLift already accounts for the gap and bubble inset).
+  // The calc() term MUST carry a unit — `calc(0 + 49px)` is invalid CSS and would
+  // be silently dropped (baseBottom comes from toLen(), which is unit-safe).
   function bottomValue() {
     return autoLift > 0
-      ? "calc(" + baseBottom + " + " + autoLift + "px + " + gap + ")"
+      ? "calc(" + baseBottom + " + " + autoLift + "px)"
       : baseBottom;
   }
 
@@ -295,18 +302,22 @@
   function recompute() {
     var vw = window.innerWidth || document.documentElement.clientWidth;
     var vh = window.innerHeight || document.documentElement.clientHeight;
-    var lift = 0;
+    var intrusion = 0;
     var how = "none";
     if (selector) {
       var el = null;
       try { el = document.querySelector(selector); } catch (e) { el = null; }
-      if (el) { lift = barFrom(el, vw, vh); how = "selector"; }
+      if (el) { intrusion = barFrom(el, vw, vh); how = "selector"; }
     } else if (autoDetect) {
-      lift = detectKnownBanner(vw, vh);
+      intrusion = detectKnownBanner(vw, vh);
       how = "known";
-      if (lift === 0) { lift = detectBottomBarHeight(vw, vh); how = "auto"; }
+      if (intrusion === 0) { intrusion = detectBottomBarHeight(vw, vh); how = "auto"; }
     }
-    if (debug) console.debug("[bcb-widget] recompute lift=" + lift + "px via " + how);
+    // Convert the banner's height into an iframe lift, leaving only `gapPx` of
+    // visible space above the banner (the bubble already floats BUBBLE_INSET px
+    // inside the iframe bottom).
+    var lift = intrusion > 0 ? Math.max(0, Math.round(intrusion + gapPx - BUBBLE_INSET)) : 0;
+    if (debug) console.debug("[bcb-widget] banner=" + intrusion + "px lift=" + lift + "px via " + how);
     if (lift === autoLift) return;
     autoLift = lift;
     if (!expanded) s.bottom = bottomValue();
