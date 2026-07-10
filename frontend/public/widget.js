@@ -120,8 +120,10 @@
 
   var s = iframe.style;
   s.position = "fixed";
+  s.top = "auto";
+  s.left = isLeft ? offsetX : "auto";
+  s.right = isLeft ? "auto" : offsetX;
   s.bottom = bottomValue();
-  s[isLeft ? "left" : "right"] = offsetX;
   s.width = BUBBLE;
   s.height = BUBBLE;
   s.maxWidth = "100vw";
@@ -138,9 +140,9 @@
   function setCollapsed() {
     s.width = BUBBLE;
     s.height = BUBBLE;
-    s.top = "";
-    s.left = isLeft ? offsetX : "";
-    s.right = isLeft ? "" : offsetX;
+    s.top = "auto";
+    s.left = isLeft ? offsetX : "auto";
+    s.right = isLeft ? "auto" : offsetX;
     s.bottom = bottomValue();
   }
 
