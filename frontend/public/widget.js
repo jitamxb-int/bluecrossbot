@@ -34,6 +34,64 @@
   var zIndex = script.getAttribute("data-z-index") || "2147483000";
   var isLeft = position === "bottom-left";
 
+  // Positioning of the idle (collapsed) bubble. All apply ONLY while collapsed;
+  // the expanded chat always fills the whole viewport. Lengths accept a bare
+  // number (px) or any CSS length ("90px", "5vh", "env(safe-area-inset-bottom)").
+  //   data-consent-selector : CSS selector of the host's cookie/consent banner.
+  //                           When that element is present AND anchored to the
+  //                           bottom of the screen, the bubble auto-lifts to sit
+  //                           just above it (by its measured height), and drops
+  //                           back down the moment the banner is hidden/removed.
+  //                           This is the ONLY thing that lifts the bubble by
+  //                           default — no banner ⇒ normal bottom position.
+  //   data-offset-gap       : gap between the bubble and the banner top (default 12px)
+  //   data-offset-bottom    : base gap from the bottom edge, always applied (default 0)
+  //   data-offset-x         : gap from the left/right edge per data-position (default 0)
+  function toLen(v) {
+    v = (v || "").trim();
+    if (v === "") return "0px"; // MUST carry a unit — used inside calc() (bottomValue)
+    return /^\d+(\.\d+)?$/.test(v) ? v + "px" : v;
+  }
+  var baseBottom = toLen(script.getAttribute("data-offset-bottom"));
+  var offsetX = toLen(script.getAttribute("data-offset-x"));
+  var gap = toLen(script.getAttribute("data-offset-gap") || "12");
+  var selector = (script.getAttribute("data-consent-selector") || "").trim();
+  // Zero-config detection of a bottom-pinned consent/cookie bar is ON by default
+  // (set data-consent-auto="off" to disable). An explicit data-consent-selector,
+  // when given, overrides the detection and targets that element instead.
+  var autoDetect = (script.getAttribute("data-consent-auto") || "on").toLowerCase() !== "off";
+  var debug = (script.getAttribute("data-consent-debug") || "").toLowerCase() === "on";
+  // Extra bottom lift (px) currently needed to clear a detected consent banner.
+  var autoLift = 0;
+
+  // Well-known consent-management-platform banner selectors, tried before the
+  // generic geometric scan. Each is still validated by the bottom-bar geometry
+  // test, so a match that isn't actually a bottom bar is ignored.
+  var KNOWN_CONSENT_SELECTORS = [
+    "#CybotCookiebotDialog",            // Cookiebot
+    "#onetrust-banner-sdk",             // OneTrust
+    "#onetrust-consent-sdk",            // OneTrust (wrapper)
+    ".cky-consent-bar",                 // CookieYes
+    ".osano-cm-window",                 // Osano
+    "#termly-code-snippet-support",     // Termly
+    "#cookie-notice",                   // Cookie Notice (WP)
+    ".cmplz-cookiebanner",              // Complianz
+    "#cookie-law-info-bar",             // CookieYes / GDPR Cookie Consent (WP)
+    "[aria-label*='cookie' i]",
+    "[class*='cookie'][class*='consent']",
+    "[id*='cookie'][id*='consent']"
+  ];
+
+  // Bottom position for the collapsed bubble: the base offset, plus the measured
+  // banner clearance (+ gap) when a consent banner is detected below the bubble.
+  // Every calc() term MUST carry a unit — `calc(0 + 68px)` is invalid CSS and the
+  // browser silently drops it (baseBottom/gap come from toLen(), which is unit-safe).
+  function bottomValue() {
+    return autoLift > 0
+      ? "calc(" + baseBottom + " + " + autoLift + "px + " + gap + ")"
+      : baseBottom;
+  }
+
   // --- Build the widget.html URL, forwarding the backend base as a query param ---
   var src = widgetOrigin + "/widget.html";
   if (apiUrl) src += "?apiBase=" + encodeURIComponent(apiUrl);
@@ -55,8 +113,8 @@
 
   var s = iframe.style;
   s.position = "fixed";
-  s.bottom = "0";
-  s[isLeft ? "left" : "right"] = "0";
+  s.bottom = bottomValue();
+  s[isLeft ? "left" : "right"] = offsetX;
   s.width = BUBBLE;
   s.height = BUBBLE;
   s.maxWidth = "100vw";
@@ -74,9 +132,9 @@
     s.width = BUBBLE;
     s.height = BUBBLE;
     s.top = "";
-    s.left = isLeft ? "0" : "";
-    s.right = isLeft ? "" : "0";
-    s.bottom = "0";
+    s.left = isLeft ? offsetX : "";
+    s.right = isLeft ? "" : offsetX;
+    s.bottom = bottomValue();
   }
 
   function setExpanded() {
@@ -153,6 +211,133 @@
       hoverShrinkTimer = null;
       setBubbleWidthInstant(BUBBLE);
     }, 260);
+  }
+
+  // --- Consent-banner auto-lift ---------------------------------------------
+  // widget.js runs in the HOST page, so it can see the host DOM and lift the idle
+  // bubble just above a cookie/consent bar pinned to the bottom of the screen —
+  // ONLY while such a bar is actually present. Reverts the moment it's dismissed.
+  // Zero-config by default (autoDetect); data-consent-selector targets a specific
+  // element instead.
+  function isBannerVisible(el) {
+    if (!el) return false;
+    var cs = window.getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity || "1") === 0) {
+      return false;
+    }
+    return el.getBoundingClientRect().height > 0;
+  }
+
+  // How far a bottom-anchored element intrudes from the bottom edge, or 0 if it
+  // doesn't qualify as a bottom "bar": it must be fixed/sticky, reach the bottom
+  // edge, live in the bottom half, and be full-width-ish (≥60% wide OR touching
+  // both side edges). Filters out unrelated fixed widgets/corner elements. Capped
+  // at 40% vh so a full-screen consent modal can't shove the bubble off the top.
+  function barIntrusion(el, vw, vh) {
+    if (!isBannerVisible(el)) return 0;
+    var cs = window.getComputedStyle(el);
+    if (cs.position !== "fixed" && cs.position !== "sticky") return 0;
+    var r = el.getBoundingClientRect();
+    if (r.bottom < vh - 4) return 0;                       // must reach the bottom edge
+    if (r.top < vh * 0.5) return 0;                        // bottom half only → a bar
+    var wideEnough = r.width >= vw * 0.6 || (r.left <= 4 && r.right >= vw - 4);
+    if (!wideEnough) return 0;                             // spans the width → a bar
+    return Math.min(Math.max(0, vh - r.top), Math.round(vh * 0.4));
+  }
+
+  // Given a hit element, look at it and up to a few ancestors for a qualifying
+  // bottom bar (the banner may be a child of the fixed wrapper, or vice versa).
+  function barFrom(node, vw, vh) {
+    var steps = 0;
+    while (node && node.nodeType === 1 && node !== document.body && node !== document.documentElement && steps < 8) {
+      if (node === iframe) break;
+      var intr = barIntrusion(node, vw, vh);
+      if (intr > 0) return intr;
+      node = node.parentElement;
+      steps++;
+    }
+    return 0;
+  }
+
+  // Zero-config: sample a few points along the very bottom edge. elementsFromPoint
+  // returns the full front-to-back stack (incl. elements BEHIND our bubble), so a
+  // bottom bar is found even where the bubble overlaps it.
+  function detectBottomBarHeight(vw, vh) {
+    if (!document.elementsFromPoint) return 0;
+    var xs = [Math.round(vw * 0.5), Math.round(vw * 0.15), Math.round(vw * 0.85)];
+    var best = 0;
+    for (var i = 0; i < xs.length; i++) {
+      var stack = document.elementsFromPoint(xs[i], vh - 2) || [];
+      for (var j = 0; j < stack.length; j++) {
+        var intr = barFrom(stack[j], vw, vh);
+        if (intr > best) best = intr;
+      }
+    }
+    return best;
+  }
+
+  // Try known consent-management-platform banners (still geometry-validated).
+  function detectKnownBanner(vw, vh) {
+    for (var i = 0; i < KNOWN_CONSENT_SELECTORS.length; i++) {
+      var el = null;
+      try { el = document.querySelector(KNOWN_CONSENT_SELECTORS[i]); } catch (e) { el = null; }
+      if (el) {
+        var intr = barFrom(el, vw, vh);
+        if (intr > 0) {
+          if (debug) console.debug("[bcb-widget] consent bar via known selector", KNOWN_CONSENT_SELECTORS[i], intr + "px");
+          return intr;
+        }
+      }
+    }
+    return 0;
+  }
+
+  function recompute() {
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var lift = 0;
+    var how = "none";
+    if (selector) {
+      var el = null;
+      try { el = document.querySelector(selector); } catch (e) { el = null; }
+      if (el) { lift = barFrom(el, vw, vh); how = "selector"; }
+    } else if (autoDetect) {
+      lift = detectKnownBanner(vw, vh);
+      how = "known";
+      if (lift === 0) { lift = detectBottomBarHeight(vw, vh); how = "auto"; }
+    }
+    if (debug) console.debug("[bcb-widget] recompute lift=" + lift + "px via " + how);
+    if (lift === autoLift) return;
+    autoLift = lift;
+    if (!expanded) s.bottom = bottomValue();
+  }
+
+  if (selector || autoDetect) {
+    var raf =
+      window.requestAnimationFrame ||
+      function (f) { return setTimeout(f, 16); };
+    var scheduled = false;
+    function scheduleRecompute() {
+      if (scheduled) return;
+      scheduled = true;
+      raf(function () { scheduled = false; recompute(); });
+    }
+    window.addEventListener("resize", scheduleRecompute);
+    window.addEventListener("orientationchange", scheduleRecompute);
+    window.addEventListener("scroll", scheduleRecompute, { passive: true });
+    document.addEventListener("DOMContentLoaded", scheduleRecompute);
+    window.addEventListener("load", scheduleRecompute);
+    try {
+      var mo = new MutationObserver(scheduleRecompute);
+      mo.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["style", "class", "hidden"],
+      });
+    } catch (e) { /* MutationObserver unsupported — resize + delayed checks still run */ }
+    // Catch banners injected asynchronously after initial load.
+    [0, 300, 1000, 2500].forEach(function (d) { setTimeout(recompute, d); });
   }
 
   window.addEventListener("message", function (event) {

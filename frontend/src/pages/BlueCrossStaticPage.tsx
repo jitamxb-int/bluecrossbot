@@ -1162,7 +1162,7 @@ export function ChatWidget({
                                 }}
                             >
                                 <img
-                                    src="/ai_avatar.png"
+                                    src="/ai_avatar-1.svg"
                                     alt="Need help? Ask Luna!"
                                     className="w-full h-full object-cover rounded-full"
                                 />
