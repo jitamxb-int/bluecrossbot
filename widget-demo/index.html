@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pratiksha Widget — standalone embed</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #ff0000;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      }
+      .hint {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #cbd5e1;
+        font-size: 14px;
+        letter-spacing: 0.04em;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Sample host-site consent banner, to demo the widget's auto-lift.
+         Click "Dismiss" and the bubble drops back to its normal position. -->
+    <div id="demo-consent-banner" style="
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+        background: #0f172a; color: #e2e8f0; padding: 16px 20px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        font-size: 14px;">
+      <span>🍪 We use cookies to improve your experience. (demo consent banner)</span>
+      <button onclick="document.getElementById('demo-consent-banner').style.display='none'"
+              style="background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600;">
+        Dismiss
+      </button>
+    </div>
+
+    <!--
+      Consent-bar handling is ZERO-CONFIG: by default the idle bubble auto-lifts
+      above any cookie/consent bar pinned to the bottom of the screen, and drops
+      back down when it's dismissed. No attributes needed (this demo relies on it).
+
+      Optional attributes on the widget <script>:
+        data-position         "bottom-right" (default) | "bottom-left"
+        data-consent-auto     "on" (default) | "off" to disable auto-detection
+        data-consent-selector target a specific banner element instead of auto-detect
+        data-offset-gap       gap between the bubble and the banner top (default 12px)
+        data-offset-bottom    base gap from the bottom edge, always applied (default 0)
+        data-offset-x         gap from the left/right edge (default 0)
+      These affect only the collapsed bubble; the open chat still fills the screen.
+    -->
+    <script
+      src="http://localhost:8080/widget.js"
+      data-api-url="http://localhost:8000">
+    </script>
+  </body>
+</html>
