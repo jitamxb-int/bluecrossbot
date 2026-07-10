@@ -5,12 +5,14 @@ import type {
   DeleteFeedbackResponse,
   FeedbackItem,
   FeedbackListResponse,
+  ResolutionStatus,
 } from '../../types/api/feedback.types'
 export type {
   CreateFeedbackRequest,
   DeleteFeedbackResponse,
   FeedbackItem,
   FeedbackListResponse,
+  ResolutionStatus,
 } from '../../types/api/feedback.types'
 
 export async function getAllFeedbacksApi(): Promise<FeedbackListResponse> {
@@ -27,6 +29,18 @@ export async function createFeedbackApi(payload: CreateFeedbackRequest): Promise
     method: 'POST',
     headers: { ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}) },
     json: payload,
+  })
+}
+
+export async function updateFeedbackStatusApi(
+  feedbackId: string,
+  resolutionStatus: ResolutionStatus,
+): Promise<FeedbackItem> {
+  const tokens = getStoredTokens()
+  return request<FeedbackItem>(`/feedback/${feedbackId}`, {
+    method: 'PATCH',
+    headers: { ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}) },
+    json: { resolution_status: resolutionStatus },
   })
 }
 

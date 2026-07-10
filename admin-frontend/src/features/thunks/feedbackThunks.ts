@@ -1,11 +1,17 @@
 import { createAsyncThunk } from '@reduxjs/toolkit'
-import { getAllFeedbacksApi, createFeedbackApi, deleteFeedbackApi } from '../api/feedbackApi'
+import {
+  getAllFeedbacksApi,
+  createFeedbackApi,
+  deleteFeedbackApi,
+  updateFeedbackStatusApi,
+} from '../api/feedbackApi'
 import { normalizeError } from '../../utils/errorHandler'
 import type {
   CreateFeedbackRequest,
   DeleteFeedbackResponse,
   FeedbackItem,
   FeedbackListResponse,
+  ResolutionStatus,
 } from '../../types/api/feedback.types'
 
 export const fetchAllFeedbacks = createAsyncThunk<FeedbackListResponse, void, { rejectValue: string }>(
@@ -24,6 +30,21 @@ export const createFeedback = createAsyncThunk<FeedbackItem, CreateFeedbackReque
   async (payload, { rejectWithValue }) => {
     try {
       return await createFeedbackApi(payload)
+    } catch (err) {
+      return rejectWithValue(normalizeError(err).message)
+    }
+  }
+)
+
+export const updateFeedbackStatus = createAsyncThunk<
+  FeedbackItem,
+  { id: string; resolution_status: ResolutionStatus },
+  { rejectValue: string }
+>(
+  'feedback/updateStatus',
+  async ({ id, resolution_status }, { rejectWithValue }) => {
+    try {
+      return await updateFeedbackStatusApi(id, resolution_status)
     } catch (err) {
       return rejectWithValue(normalizeError(err).message)
     }

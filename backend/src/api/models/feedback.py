@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# Work-status values for a feedback entry (distinct from the active/deleted `status`).
+ResolutionStatus = Literal["WIP", "Resolved"]
 
 
 class CreateFeedbackRequest(BaseModel):
@@ -13,12 +17,21 @@ class CreateFeedbackRequest(BaseModel):
     feedback_text: str = Field(..., min_length=1, description="The reviewer's feedback comment.")
 
 
+class UpdateFeedbackStatusRequest(BaseModel):
+    resolution_status: ResolutionStatus = Field(
+        ..., description="New work status for the feedback entry: 'WIP' or 'Resolved'."
+    )
+
+
 class FeedbackResponse(BaseModel):
     id: str = Field(..., description="Feedback document ID.")
     session_id: str
     original_text: str
     feedback_text: str
     status: int = Field(..., description="1 = active, 0 = deleted")
+    resolution_status: ResolutionStatus = Field(
+        default="WIP", description="Work status: 'WIP' or 'Resolved'."
+    )
     created_at: datetime
 
 

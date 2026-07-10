@@ -8,3 +8,5 @@ export const selectCreating       = (state: RootState) => state.feedback.creatin
 export const selectCreateError    = (state: RootState) => state.feedback.createError
 export const selectDeletingId     = (state: RootState) => state.feedback.deletingId
 export const selectDeleteError    = (state: RootState) => state.feedback.deleteError
+export const selectUpdatingId     = (state: RootState) => state.feedback.updatingId
+export const selectUpdateError    = (state: RootState) => state.feedback.updateError

@@ -11,6 +11,7 @@ from src.api.models.feedback import (
     DeleteFeedbackResponse,
     FeedbackListResponse,
     FeedbackResponse,
+    UpdateFeedbackStatusRequest,
 )
 from src.services.feedback.service import FeedbackService
 
@@ -43,6 +44,21 @@ async def create_feedback(
     service: FeedbackService = Depends(get_feedback_service),
 ) -> FeedbackResponse:
     return await service.create(payload)
+
+
+@router.patch(
+    "/feedback/{feedback_id}",
+    response_model=FeedbackResponse,
+    responses={404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    summary="Update feedback work status.",
+    description="Mark a feedback entry as 'WIP' or 'Resolved'. Returns 404 if not found.",
+)
+async def update_feedback_status(
+    feedback_id: str,
+    payload: UpdateFeedbackStatusRequest,
+    service: FeedbackService = Depends(get_feedback_service),
+) -> FeedbackResponse:
+    return await service.update_status(feedback_id, payload.resolution_status)
 
 
 @router.delete(

@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit'
 import type { RequestStatus } from '../../types/common.types'
 import type { FeedbackItem } from '../../types/api/feedback.types'
-import { fetchAllFeedbacks, createFeedback, deleteFeedback } from '../thunks/feedbackThunks'
+import { fetchAllFeedbacks, createFeedback, deleteFeedback, updateFeedbackStatus } from '../thunks/feedbackThunks'
 
 interface FeedbackState {
   feedbacks: FeedbackItem[]
@@ -12,6 +12,8 @@ interface FeedbackState {
   createError: string | null
   deletingId: string | null
   deleteError: string | null
+  updatingId: string | null
+  updateError: string | null
 }
 
 const initialState: FeedbackState = {
@@ -23,6 +25,8 @@ const initialState: FeedbackState = {
   createError: null,
   deletingId: null,
   deleteError: null,
+  updatingId: null,
+  updateError: null,
 }
 
 const feedbackSlice = createSlice({
@@ -34,6 +38,9 @@ const feedbackSlice = createSlice({
     },
     clearDeleteError(state) {
       state.deleteError = null
+    },
+    clearUpdateError(state) {
+      state.updateError = null
     },
   },
   extraReducers: (builder) => {
@@ -80,8 +87,22 @@ const feedbackSlice = createSlice({
         state.deletingId = null
         state.deleteError = action.payload ?? 'Failed to delete feedback'
       })
+      // update status (WIP <-> Resolved)
+      .addCase(updateFeedbackStatus.pending, (state, action) => {
+        state.updatingId = action.meta.arg.id
+        state.updateError = null
+      })
+      .addCase(updateFeedbackStatus.fulfilled, (state, action) => {
+        state.updatingId = null
+        const i = state.feedbacks.findIndex((f) => f.id === action.payload.id)
+        if (i !== -1) state.feedbacks[i] = action.payload
+      })
+      .addCase(updateFeedbackStatus.rejected, (state, action) => {
+        state.updatingId = null
+        state.updateError = action.payload ?? 'Failed to update feedback status'
+      })
   },
 })
 
-export const { clearCreateError, clearDeleteError } = feedbackSlice.actions
+export const { clearCreateError, clearDeleteError, clearUpdateError } = feedbackSlice.actions
 export default feedbackSlice.reducer

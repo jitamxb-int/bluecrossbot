@@ -30,6 +30,9 @@ class SessionFeedback(Document):
     original_text: str
     feedback_text: str
     status: int = Field(default=1, description="1 = active, 0 = deleted")
+    # Work status set by admins: new feedback starts as WIP; marked Resolved once
+    # the issue is handled. Distinct from `status` (which is the active/deleted flag).
+    resolution_status: str = Field(default="WIP", description="WIP | Resolved")
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -83,3 +86,16 @@ class FeedbackRepository:
         feedback.updated_at = _utcnow()
         await feedback.save()
         return True
+
+    async def set_resolution_status(
+        self, feedback_id: str, resolution_status: str
+    ) -> SessionFeedback | None:
+        """Update the WIP/Resolved work status. Returns the doc, or None if absent."""
+        oid = PydanticObjectId(feedback_id)
+        feedback = await SessionFeedback.get(oid)
+        if feedback is None:
+            return None
+        feedback.resolution_status = resolution_status
+        feedback.updated_at = _utcnow()
+        await feedback.save()
+        return feedback
