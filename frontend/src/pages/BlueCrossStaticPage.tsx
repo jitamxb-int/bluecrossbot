@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BlueCrossUI } from '@/components/livekit_bank/bluecross/BlueCrossUI';
 import { X, MessageSquare, Send, ExternalLink } from 'lucide-react';
 import DisclaimerModal from '@/components/DisclaimerModal';
+import { renderInlineText } from '@/lib/renderRichText';
  
 const BLUE   = '#1B3D8F';
 const BLUE_L = '#3A6BC4';
@@ -466,17 +467,9 @@ const HCPConsentBar = ({ onAccept, onDeny }: { onAccept: () => void; onDeny: () 
 };
  
 function parseBold(text: string): React.ReactNode {
-    const parts = text.split(/(\*\*[^*]*\*\*)/g);
-    if (parts.length === 1) return text;
- 
-    return parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i} style={{ color: BLUE }}>{part.slice(2, -2)}</strong>;
-        }
-        return part;
-    });
+    return renderInlineText(text);
 }
- 
+
 // Turn inline "- " list separators (" - a - b - c") into real newline bullets so
 // the per-line bullet renderer picks them up. Requires whitespace on BOTH sides of
 // the dash, so hyphenated words ("Community-acquired") are never split. Only fires
