@@ -6,12 +6,12 @@ values of that type, or delete every point in the collection.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class DocumentField(str, Enum):
+class DocumentField(StrEnum):
     document_id = "document_id"
     document_name = "document_name"
 

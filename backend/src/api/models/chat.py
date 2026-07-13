@@ -10,7 +10,7 @@ pulled from the vector store payloads — never invented by the model.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -110,7 +110,7 @@ class ChatTranscriptsResponse(BaseModel):
     )
 
 
-class SessionSortField(str, Enum):
+class SessionSortField(StrEnum):
     id = "id"
     started_at = "started_at"
     ended_at = "ended_at"
@@ -118,7 +118,7 @@ class SessionSortField(str, Enum):
     created_at = "created_at"
 
 
-class SortOrder(str, Enum):
+class SortOrder(StrEnum):
     asc = "asc"
     desc = "desc"
 

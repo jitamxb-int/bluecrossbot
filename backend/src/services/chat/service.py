@@ -18,6 +18,7 @@ Implements ``docs/CONVERSATION_HISTORY.md``. Each turn:
 from __future__ import annotations
 
 import re
+import random
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -181,6 +182,25 @@ _SYSTEM_INSTRUCTIONS = (
     "tone and meaning to preserve, NOT a script to copy word for word.\n"
     "Return empty product_ids and source_ids for these purchase questions; "
     "populate video_ids only if a video genuinely helps.\n\n"
+    
+    # ── 3C. PRICING / COST OF MEDICINE ────────────────────────────────
+    "## PRICING / COST OF MEDICINE\n"
+    "When the user asks about the PRICE, COST, MRP, or pricing of any medicine or "
+    "product — e.g. 'what is the price of X', 'how much does it cost', 'is it "
+    "expensive' — do NOT attempt to quote a specific price or estimate it, even if "
+    "some pricing info appears in the context.\n"
+    "Instead, you MUST direct them to the official price list by including this "
+    "exact link in your response: https://www.bluecrosslabs.com/dpco-2013-price-list/\n"
+    "Write a concise, natural reply in your own words and vary the phrasing from turn "
+    "to turn so it does not sound repetitive or scripted. Do not reuse the same "
+    "sentence structure every time. You may say things like: 'Please refer to our "
+    "official DPCO price list for the latest pricing details: "
+    "https://www.bluecrosslabs.com/dpco-2013-price-list/', 'For current pricing, "
+    "please check our official price list here: "
+    "https://www.bluecrosslabs.com/dpco-2013-price-list/', or 'The most accurate "
+    "and up-to-date pricing information is available in our official DPCO price list: "
+    "https://www.bluecrosslabs.com/dpco-2013-price-list/'. Always preserve the link "
+    "exactly as provided and include it once in a natural sentence.\n\n"
 
     # ── 4. INTERNAL TAGS ──────────────────────────────────────────────
     "## INTERNAL TAGS\n"
@@ -203,11 +223,11 @@ _SYSTEM_INSTRUCTIONS = (
     "## RESPONSE FORMATTING\n"
     "Every response must be precise and crisp — not too long, not too short, "
     "just enough to fully answer the question and nothing more:\n"
-    "- **Short answers**: plain prose, 1–3 sentences. No lists, no bold unless "
+    "- **Short answers**: plain prose (paragraphs), 1–3 sentences. No lists, no bold unless "
     "a term truly needs emphasis.\n"
-    "- **Longer answers**: use bullet points to break up the content. Each "
-    "bullet must be concise — one clear idea per bullet, no padding.\n"
-    "- **Sequential steps**: use a numbered list.\n"
+    "- **Longer answers**: use bullet points to break up the content. Always insert a blank "
+    "line before starting a list. Each bullet must be concise — one clear idea per bullet.\n"
+    "- **Sequential steps**: use a numbered list, always with a blank line before starting.\n"
     "- **Bold** only product names, critical warnings, or key terms the user "
     "must not miss.\n"
     "- Never pad responses. If the full answer fits in two sentences, write "
@@ -277,6 +297,61 @@ class ChatService:
         self._sessions = sessions
         self._settings = settings
         self._config = config
+
+    @staticmethod
+    def _is_price_question(text: str) -> bool:
+        text = (text or "").lower()
+        return bool(
+            re.search(
+                r"\b(?:price|pricing|cost|costs|mrp|amount|rate|rates|charge|charges|rupee|rupees|rs\.?|inr|₹)\b",
+                text,
+            )
+        )
+
+    @staticmethod
+    def _is_price_range_question(text: str) -> bool:
+        text = (text or "").lower()
+        return bool(
+            re.search(
+                r"\b(?:range|price range|pricing range|approx(?:imate)?|around|about|estimate|estimated|roughly|atleast|at least|minimum|maximum)\b",
+                text,
+            )
+        ) and ChatService._is_price_question(text)
+
+    @staticmethod
+    def _extract_price_product(text: str) -> str | None:
+        text = (text or "").strip()
+        for pattern in [
+            r"\b(?:for|of|on)\s+([A-Za-z][A-Za-z0-9&\- ]{2,})",
+            r"\b([A-Za-z][A-Za-z0-9&\- ]{2,})\s+pricing\b",
+            r"\b([A-Za-z][A-Za-z0-9&\- ]{2,})\s+price\b",
+        ]:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                product = match.group(1).strip()
+                if 1 < len(product) <= 60:
+                    return product
+        return None
+
+    @staticmethod
+    def _build_price_reply(text: str, is_range: bool) -> str:
+        product = ChatService._extract_price_product(text) or "that product"
+        link = "https://www.bluecrosslabs.com/dpco-2013-price-list/"
+        if is_range:
+            templates = [
+                "I don't have an official price range for {product} here — please check our DPCO price list for the most accurate details: {link}",
+                "Sorry, I can't provide an official price range. Please refer to the DPCO price list for {product}: {link}",
+                "For official pricing ranges, please consult our DPCO price list: {link}",
+                "For the current pricing range, please visit our DPCO price list: {link}",
+            ]
+        else:
+            templates = [
+                "The most accurate and up-to-date pricing information for {product} is in our official DPCO price list: {link}",
+                "For current pricing of {product}, please check our official DPCO price list here: {link}",
+                "Please refer to our official DPCO price list for the latest pricing details: {link}",
+                "Official prices are listed in our DPCO price list — you can view it here: {link}",
+            ]
+        return random.choice(templates).format(product=product, link=link)
 
     async def chat_count_metrics(
         self,
@@ -514,6 +589,39 @@ class ChatService:
         # 2. Rewrite for retrieval only (raw query is what we store/show).
         standalone = await self._llm.rewrite_standalone(request.message, summary, chat_history)
 
+        if (
+            ChatService._is_price_question(request.message)
+            or ChatService._is_price_question(standalone)
+        ):
+            answer_text = ChatService._build_price_reply(
+                request.message
+                if ChatService._is_price_question(request.message)
+                else standalone,
+                ChatService._is_price_range_question(request.message)
+                or ChatService._is_price_range_question(standalone),
+            )
+
+            session = await self._sessions.append_turn(
+                session_id=session_id,
+                user_query=request.message,
+                assistant_content=answer_text,
+                started_at=request_started_at,
+            )
+            return ChatResponse(
+                answer=answer_text,
+                session=SessionInfo(
+                    session_id=session.session_id,
+                    started_at=session.started_at,
+                    ended_at=session.ended_at,
+                    duration_seconds=session.duration_seconds,
+                    is_active=session.is_active,
+                    hcp_consent=session.hcp_consent,
+                ),
+                citations="",
+                products=[],
+                videos=[],
+            )
+
         # 3. Retrieve (blended across doc types).
         logger.info(f"Standalone query generated: {standalone}")
 
@@ -672,6 +780,48 @@ class ChatService:
             standalone = await self._llm.rewrite_standalone(
                 request.message, summary, chat_history
             )
+            # Streaming: use the shared price-detection logic and dynamic templates.
+            if (
+                ChatService._is_price_question(request.message)
+                or ChatService._is_price_question(standalone)
+            ):
+                answer_text = ChatService._build_price_reply(
+                    request.message
+                    if ChatService._is_price_question(request.message)
+                    else standalone,
+                    ChatService._is_price_range_question(request.message)
+                    or ChatService._is_price_range_question(standalone),
+                )
+
+                yield {
+                    "type": "start",
+                    "session_id": session_id,
+                    "hcp_consent": bool(session is not None and session.hcp_consent),
+                    "requires_consent": False,
+                }
+                yield {"type": "delta", "text": answer_text}
+                session = await self._sessions.append_turn(
+                    session_id=session_id,
+                    user_query=request.message,
+                    assistant_content=answer_text,
+                    started_at=request_started_at,
+                )
+                yield {
+                    "type": "done",
+                    "answer": answer_text,
+                    "session": SessionInfo(
+                        session_id=session.session_id,
+                        started_at=session.started_at,
+                        ended_at=session.ended_at,
+                        duration_seconds=session.duration_seconds,
+                        is_active=session.is_active,
+                        hcp_consent=session.hcp_consent,
+                    ).model_dump(mode="json"),
+                    "citations": "",
+                    "products": [],
+                    "videos": [],
+                }
+                return
             logger.info(f"Standalone query generated: {standalone}")
             points = await self._retrieval.search(standalone, top_k)
             logger.info(f"Retrieved {len(points)} points from vector search")
@@ -978,6 +1128,8 @@ def _sanitize_answer(answer: str) -> str:
     """Strip stray internal tag tokens that leaked into the visible answer."""
     cleaned = _BRACKETED_TAG.sub("", answer)
     cleaned = _TRAILING_TAGS.sub("", cleaned)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    # Collapse multiple horizontal spaces into one, preserving newlines
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    # Remove horizontal space before punctuation
+    cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
     return cleaned.strip()

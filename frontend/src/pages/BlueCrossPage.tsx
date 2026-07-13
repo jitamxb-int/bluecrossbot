@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BlueCrossUI } from '@/components/livekit_bank/bluecross/BlueCrossUI';
 import { X, MessageSquare, Send, ExternalLink } from 'lucide-react';
+import { renderInlineText } from '@/lib/renderRichText';
 
 /* ── CONFIG ───────────────────────────────────────────────────────── */
 
@@ -501,15 +502,7 @@ const HCPConsentBar = ({ citations, messageId }: { citations: string; messageId:
 };
 
 function parseBold(text: string): React.ReactNode {
-    const parts = text.split(/(\*\*[^*]*\*\*)/g);
-    if (parts.length === 1) return text;
-
-    return parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i} style={{ color: BLUE }}>{part.slice(2, -2)}</strong>;
-        }
-        return part;
-    });
+    return renderInlineText(text);
 }
 
 function renderFormattedText(text: string): React.ReactNode {
