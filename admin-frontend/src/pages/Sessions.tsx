@@ -8,7 +8,15 @@ import {
   selectSessionTotal,
   selectSessionsStatus,
   selectSessionsError,
+  selectSessionsPage,
+  selectSessionsPageSize,
+  selectSessionsRange,
 } from '../features/selectors/chatSelectors';
+import {
+  setSessionsPage,
+  setSessionsPageSize,
+  setSessionsRange,
+} from '../features/slices/chatSlice';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -27,7 +35,7 @@ import {
 } from '../components/ui/alert-dialog';
 import { Search, FileText, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
-import { currentMonthRange, toApiRange } from '../utils/dateRange';
+import { toApiRange } from '../utils/dateRange';
 
 const Sessions = () => {
   const dispatch = useAppDispatch();
@@ -37,12 +45,12 @@ const Sessions = () => {
   const total = useAppSelector(selectSessionTotal);
   // const status = useAppSelector(selectSessionsStatus);
   const error = useAppSelector(selectSessionsError);
+  const currentPage = useAppSelector(selectSessionsPage);
+  const pageSize = useAppSelector(selectSessionsPageSize);
+  const range = useAppSelector(selectSessionsRange);
 
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [range, setRange] = useState(currentMonthRange());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
@@ -112,7 +120,7 @@ const Sessions = () => {
       setSelected(new Set());
       setPendingDelete(null);
       // If we just emptied a page beyond the first, step back; else refetch in place.
-      if (filtered.length === removed && currentPage > 1) setCurrentPage((p) => p - 1);
+      if (filtered.length === removed && currentPage > 1) dispatch(setSessionsPage(currentPage - 1));
       else setRefreshKey((k) => k + 1);
     } catch {
       // Error is surfaced via the sessions error banner; keep the dialog target cleared.
@@ -132,8 +140,8 @@ const Sessions = () => {
   // };
 
   const handlePageSizeChange = (val: string) => {
-    setPageSize(Number(val));
-    setCurrentPage(1);
+    dispatch(setSessionsPageSize(Number(val)));
+    dispatch(setSessionsPage(1));
   };
 
   const getStatusStyle = (isActive: boolean) =>
@@ -149,7 +157,7 @@ const Sessions = () => {
             <h1 className="text-2xl font-bold">Chat Sessions</h1>
             <DateRangeFilter
               range={range}
-              onRangeChange={(r) => { setRange(r); setCurrentPage(1); }}
+              onRangeChange={(r) => { dispatch(setSessionsRange(r)); dispatch(setSessionsPage(1)); }}
             />
           </div>
 
@@ -369,7 +377,7 @@ const Sessions = () => {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline" size="icon" className="h-8 w-8"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  onClick={() => dispatch(setSessionsPage(Math.max(1, currentPage - 1)))}
                   disabled={currentPage === 1}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -377,7 +385,7 @@ const Sessions = () => {
                 <div className="text-sm font-medium">Page {currentPage} of {totalPages || 1}</div>
                 <Button
                   variant="outline" size="icon" className="h-8 w-8"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={() => dispatch(setSessionsPage(Math.min(totalPages, currentPage + 1)))}
                   disabled={currentPage === totalPages || totalPages === 0}
                 >
                   <ChevronRight className="h-4 w-4" />
