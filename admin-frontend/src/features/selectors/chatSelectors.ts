@@ -10,3 +10,7 @@ export const selectSessions           = (state: RootState) => state.chat.session
 export const selectSessionTotal       = (state: RootState) => state.chat.sessionTotal;
 export const selectSessionsStatus     = (state: RootState) => state.chat.sessionsStatus;
 export const selectSessionsError      = (state: RootState) => state.chat.sessionsError;
+
+export const selectSessionsPage       = (state: RootState) => state.chat.sessionsPage;
+export const selectSessionsPageSize   = (state: RootState) => state.chat.sessionsPageSize;
+export const selectSessionsRange      = (state: RootState) => state.chat.sessionsRange;
