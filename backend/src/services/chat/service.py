@@ -46,6 +46,26 @@ from src.storage.mongo.session import SessionRepository
 
 logger = get_logger(__name__)
 
+# Detects queries asking to LIST / ENUMERATE / NAME / give EXAMPLES of the
+# company's medicines or products (e.g. 'list me 10 examples of medicine',
+# 'what medicines do you have', 'name some products'). Such queries trigger a
+# catalog-scoped retrieval so the model only ever lists real Blue Cross
+# products instead of padding from world knowledge (e.g. cetirizine).
+_PRODUCT_LIST_RE = re.compile(
+    r"\b(?:"
+    r"(?:list|enumerate|name|give|show|suggest|recommend|tell)\b.{0,40}?"
+    r"(?:medicine|medication|drug|product|tablet|brand|syrup|ointment|capsule)\w*"
+    r"|examples?\s+of\b.{0,8}?(?:medicine|medication|drug|product|brand)\w*"
+    r"|(?:what|which)\s+(?:medicines?|medications?|drugs?|products?|brands?|tablets?)"
+    r"\b.{0,25}?(?:have|has|manufactur\w+|produc\w+|make\w*|stock|offer|sell|available)"
+    r"|how\s+many\s+(?:medicines?|products?|drugs?)\w*"
+    r"|(?:medicine|medication|drug|product|brand)\w*\s+(?:list|range|catalog|catalogue)"
+    r"|(?:list|range|catalog|catalogue)\s+of\b.{0,8}?(?:medicines?|products?|drugs?)\w*"
+    r"|(?:medicines?|products?|drugs?)\s+(?:you\s+)?(?:manufactur\w+|produc\w+|make\w*|offer|stock|sell)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Returned (HTTP 200) when a message targets a session past its max duration.
 SESSION_EXPIRED_MESSAGE = (
     "Your chat session has reached the maximum allowed duration and has now ended. "
@@ -202,6 +222,22 @@ _SYSTEM_INSTRUCTIONS = (
     "https://www.bluecrosslabs.com/dpco-2013-price-list/'. Always preserve the link "
     "exactly as provided and include it once in a natural sentence.\n\n"
 
+    # ── 3D. LISTING / ENUMERATING PRODUCTS ────────────────────────────
+    "## LISTING / ENUMERATING PRODUCTS OR MEDICINES\n"
+    "When the user asks you to LIST, NAME, ENUMERATE, or give EXAMPLES of "
+    "medicines or products — e.g. 'list me 10 examples of medicine', 'what "
+    "medicines do you have', 'name some of your products', 'suggest some "
+    "medicines' — list ONLY products whose names appear verbatim in the "
+    "[P#] PRODUCT blocks of the [RETRIEVED CONTEXT]. NEVER add any medicine "
+    "or product from general knowledge, even if it is well known (e.g. "
+    "cetirizine, paracetamol). If the context contains fewer products than "
+    "the user asked for, list all that are present, state how many there "
+    "are, and do NOT pad the list with anything else. If the context "
+    "contains no products at all, respond that you don't have that "
+    "information.\n"
+    "Put the [P#] tag of EVERY product you list into product_ids. Never "
+    "invent product names, image URLs, or video URLs.\n\n"
+
     # ── 4. INTERNAL TAGS ──────────────────────────────────────────────
     "## INTERNAL TAGS\n"
     "Context is tagged as [D1], [D2] (descriptive), [P1], [P2] (products), "
@@ -317,6 +353,10 @@ class ChatService:
                 text,
             )
         ) and ChatService._is_price_question(text)
+
+    @staticmethod
+    def _is_product_list_question(text: str) -> bool:
+        return bool(_PRODUCT_LIST_RE.search(text or ""))
 
     @staticmethod
     def _extract_price_product(text: str) -> str | None:
@@ -631,6 +671,27 @@ class ChatService:
         logger.debug(f"Retrieved points: {points}")
         descriptive_map, product_map, video_map = _split_by_type(points)
 
+        # 3a0. PRODUCT-LIST QUERIES. The blended top-k rarely surfaces enough
+        #     products for 'list me 10 examples of medicine' type queries, which
+        #     is what tempts the model into padding the list from world
+        #     knowledge (e.g. cetirizine). Re-run retrieval scoped to the
+        #     product catalog and widen the context so every listed product is a
+        #     real Blue Cross product.
+        if ChatService._is_product_list_question(
+            request.message
+        ) or ChatService._is_product_list_question(standalone):
+            logger.info(
+                "product_list_query_detected",
+                message=request.message,
+                standalone=standalone,
+            )
+            product_points = await self._retrieval.search(
+                standalone,
+                max(top_k, self._settings.chat_product_list_top_k),
+                {"doc_type": "product"},
+            )
+            _merge_products(product_map, product_points)
+
         # 3a1. PI-priority: prefer the linked PI document, fall back to its PIL.
         descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
 
@@ -853,6 +914,23 @@ class ChatService:
 
             descriptive_map, product_map, video_map = _split_by_type(points)
 
+            # Product-list queries: widen context with catalog-scoped products so
+            # the model only lists real Blue Cross products (see answer() 3a0).
+            if ChatService._is_product_list_question(
+                request.message
+            ) or ChatService._is_product_list_question(standalone):
+                logger.info(
+                    "product_list_query_detected",
+                    message=request.message,
+                    standalone=standalone,
+                )
+                product_points = await self._retrieval.search(
+                    standalone,
+                    max(top_k, self._settings.chat_product_list_top_k),
+                    {"doc_type": "product"},
+                )
+                _merge_products(product_map, product_points)
+
             # PI-priority: prefer the linked PI document, fall back to its PIL.
             descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
 
@@ -998,6 +1076,24 @@ class ChatService:
 
         messages.append({"role": "user", "content": user_query})
         return messages
+
+
+def _merge_products(product_map: dict[str, dict], points: list) -> dict[str, dict]:
+    """Append catalog product points whose name isn't already in the map.
+
+    Used for product-list queries to widen the set of real Blue Cross products
+    in context without duplicating names (existing P# tags stay stable).
+    """
+    seen = {p.get("product_name") for p in product_map.values()}
+    for point in points:
+        payload = dict(point.payload or {})
+        name = payload.get("product_name")
+        if not name or name in seen:
+            continue
+        payload["_score"] = getattr(point, "score", None)
+        product_map[f"P{len(product_map) + 1}"] = payload
+        seen.add(name)
+    return product_map
 
 
 def _split_by_type(points: list) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
