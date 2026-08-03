@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # --- Chat ---
     chat_history_window_turns: int = 10
     chat_retrieval_top_k: int = 30
+    # When the user asks to LIST/ENUMERATE medicines or products (e.g. 'list me
+    # 10 examples of medicine'), retrieval is re-run scoped to the product
+    # catalog with this (larger) top_k so the model has enough real Blue Cross
+    # products in context to list — instead of padding from world knowledge.
+    chat_product_list_top_k: int = 40
     # Minimum COSINE similarity (0..1) for the linked PI document to be considered a
     # sufficient answer before falling back to the PIL. The PI/PIL scoped searches
     # are run dense-only so their scores are cosine (hybrid RRF scores are
