@@ -83,6 +83,10 @@ class ChatResponse(BaseModel):
     session: SessionInfo
     products: list[ProductReference] = Field(default_factory=list)
     videos: list[VideoReference] = Field(default_factory=list)
+    conversation_ended: bool = Field(
+        default=False,
+        description="True when this reply is the final sign-off and the chat should close.",
+    )
 
 
 class ChatCountResponse(BaseModel):

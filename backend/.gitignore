@@ -43,3 +43,4 @@ qdrant_storage/
 /tests
 /CLAUDE.md
 /docs
+/test_scripts

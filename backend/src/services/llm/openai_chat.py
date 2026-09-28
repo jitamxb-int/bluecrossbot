@@ -123,10 +123,15 @@ _CHAT_RESPONSE_SCHEMA = {
                 },
                 "response_type": {
                     "type": "string",
-                    "enum": ["answer", "chitchat", "no_info"],
+                    "enum": ["answer", "chitchat", "no_info", "closing_question", "farewell"],
                     "description": (
                         "'answer' = every claim is grounded in [RETRIEVED CONTEXT]; "
                         "'chitchat' = greeting/social/meta; "
+                        "'closing_question' = the user thanked/acknowledged and this reply "
+                        "is only a brief acknowledgement asking if they need anything else; "
+                        "'farewell' = the user is done (said goodbye, declined further "
+                        "help, or thanked again after the closing question) and this "
+                        "reply is the final brief sign-off that ends the chat; "
                         "'no_info' = the context does NOT contain what's needed to answer "
                         "(never answer such questions from outside/world knowledge)."
                     ),

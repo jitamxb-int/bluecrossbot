@@ -92,6 +92,64 @@ NO_INFO_MESSAGE = (
     "info@bluecrosslabs.com, and our team will be happy to assist you."
 )
 
+# Official careers page + contact for job / vacancy / fresher questions. Retrieved
+# chunks carry their URL only in the payload (never in the text the model sees), so
+# the page is given to the model explicitly — same approach as the DPCO price list.
+CAREERS_URL = "https://www.bluecrosslabs.com/current-opening/"
+CAREERS_GUIDANCE_MESSAGE = (
+    "For the latest job vacancies at Blue Cross Laboratories, including any "
+    f"opportunities for freshers, please visit our Current Openings page: {CAREERS_URL} "
+    "Openings are updated from time to time, so if you'd like to confirm whether a "
+    "specific role or a fresher position is available, please email us at "
+    "info@bluecrosslabs.com and our team will be happy to assist you."
+)
+
+# Detects questions about jobs / vacancies / careers / fresher opportunities. Used
+# only to replace the generic no_info refusal with careers guidance.
+_CAREERS_RE = re.compile(
+    r"\b(?:"
+    r"vacanc(?:y|ies)|careers?|hiring|recruit\w*|freshers?|internships?|employment"
+    r"|jobs?\b(?!\s+of\b)"
+    r"|(?:current|job|any)\s+openings?|openings?\s+(?:at|in|for|with)\b"
+    r"|apply\s+(?:for\s+)?(?:a\s+|an\s+)?(?:job|position|post|role)"
+    r"|(?:work|join)\s+(?:(?:at|for|with|in)\s+)?"
+    r"(?:blue\s*cross|your\s+(?:company|team|organi[sz]ation))"
+    r")",
+    re.IGNORECASE,
+)
+
+# --- Conversation closing (see "CLOSING THE CONVERSATION" in the prompt) ---------
+# Short sign-offs used when the model tries to ask the closing question a second
+# time; varied so the ending never reads as a canned loop.
+_FAREWELL_MESSAGES = (
+    "You're welcome! Take care, and goodbye.",
+    "It was a pleasure helping you. Goodbye and take care!",
+    "Glad I could help. Have a good day — goodbye!",
+)
+# Sentences that re-open the chat ("feel free to reach out", "if you have any more
+# questions…"); stripped from the final sign-off so it actually closes the chat.
+_REOPENING_SENTENCE = re.compile(
+    r"[^.!?]*\b(?:feel free|don'?t hesitate|reach out|let me know|i'?m (?:always )?here"
+    r"|any (?:more|other|further) (?:questions|help|assistance)|anything else)\b[^.!?]*[.!?]?",
+    re.IGNORECASE,
+)
+# Injected before the user's message so the model knows the closing state instead
+# of inferring it from the transcript.
+_CLOSING_STATE_NOTES = {
+    "asked": (
+        "[CLOSING STATE] Your previous reply already asked the user if they need "
+        "anything else. Do NOT ask it again. If this message declines, thanks you "
+        "again, acknowledges, or says goodbye, give the one-sentence final sign-off "
+        "(response_type 'farewell'). If it says yes or asks something, continue helping."
+    ),
+    "ended": (
+        "[CLOSING STATE] You already said goodbye and closed this chat. If this "
+        "message is just another thanks / acknowledgement / goodbye, reply with a "
+        "very short sign-off only (response_type 'farewell'). If it asks something "
+        "new, answer it normally."
+    ),
+}
+
 _SYSTEM_INSTRUCTIONS = (
     # ── ROLE ──────────────────────────────────────────────────────────
     "You are Luna, an assistant for Blue Cross Laboratories, here to help "
@@ -222,6 +280,32 @@ _SYSTEM_INSTRUCTIONS = (
     "https://www.bluecrosslabs.com/dpco-2013-price-list/'. Always preserve the link "
     "exactly as provided and include it once in a natural sentence.\n\n"
 
+    # ── 3C2. CAREERS / JOB OPENINGS ───────────────────────────────────
+    "## CAREERS / JOB OPENINGS / VACANCIES\n"
+    "When the user asks about jobs, vacancies, current openings, careers, hiring, "
+    "internships, fresher opportunities, or how to apply to / work at Blue Cross "
+    "Laboratories — e.g. 'do you have a vacancy for freshers', 'are there any job "
+    "openings', 'I have completed my BPharma, can I apply', 'where can I find current "
+    "openings', 'how can I contact you about jobs':\n"
+    f"  - ALWAYS guide them to the official Current Openings page: {CAREERS_URL} "
+    "(include this exact link once, in a natural sentence).\n"
+    "  - ALWAYS offer info@bluecrosslabs.com for further clarification or to confirm "
+    "whether a specific role or fresher position is available.\n"
+    "  - If the [RETRIEVED CONTEXT] lists specific openings, you may briefly mention "
+    "them as currently listed on the page, with ONLY the requirements stated there "
+    "(e.g. experience, qualification). Present them as what the page lists, not as a "
+    "guarantee of hiring status.\n"
+    "  - NEVER invent vacancies, job roles, eligibility criteria, salaries, internships, "
+    "or hiring status, and never speculate about unlisted or entry-level roles. If the "
+    "context does not mention fresher/entry-level roles, say plainly that the listed "
+    "openings do not mention fresher positions and that the team can confirm by email.\n"
+    "  - This rule OVERRIDES the NO-HALLUCINATION fallback for these questions: do NOT "
+    "reply with 'I'm sorry, I don't have enough information…'. The page and email are "
+    "always a valid, grounded answer, so set response_type to 'answer' (never "
+    "'no_info'). Return empty product_ids and video_ids; put the [D#] tags of any "
+    "career/opening chunks you used in source_ids.\n"
+    "Keep the reply short and warm, and vary the wording from turn to turn.\n\n"
+
     # ── 3D. LISTING / ENUMERATING PRODUCTS ────────────────────────────
     "## LISTING / ENUMERATING PRODUCTS OR MEDICINES\n"
     "When the user asks you to LIST, NAME, ENUMERATE, or give EXAMPLES of "
@@ -316,7 +400,35 @@ _SYSTEM_INSTRUCTIONS = (
     # ── 9. GREETINGS & CHIT-CHAT ──────────────────────────────────────
     "## GREETINGS & CHIT-CHAT\n"
     "Respond naturally and keep it conversational. Return empty product_ids, "
-    "video_ids, and source_ids. Do not mention context or tags."
+    "video_ids, and source_ids. Do not mention context or tags.\n\n"
+
+    # ── 10. CLOSING THE CONVERSATION ──────────────────────────────────
+    "## CLOSING THE CONVERSATION (read the whole chat history first)\n"
+    "Closing signals: thanks / gratitude ('thanks', 'a lot of thanks', 'you are so "
+    "kind'), acknowledgements with no new question ('ok', 'great', 'noted', 'same to "
+    "you', 'I will email them now'), and farewells ('bye', 'take care', 'see you'). "
+    "Treat them as signs the user is wrapping up — NOT as an invitation to keep "
+    "chatting. Follow these steps:\n"
+    "  1. FIRST closing signal (thanks / acknowledgement), and you have NOT yet asked "
+    "the closing question in this chat: reply with a very short acknowledgement "
+    "(a few words at most) followed by ONE closing question, e.g. 'Is there anything "
+    "else I can help you with?'. Nothing else — no 'Have a great day', no 'feel free "
+    "to reach out', no 'I'm here to help'. response_type: 'closing_question'.\n"
+    "  2. END the chat with ONE brief, polite sign-off sentence (e.g. 'You're welcome "
+    "— take care, goodbye!') when ANY of these is true: the user answers the closing "
+    "question negatively ('no', 'nope', 'that's all', 'nothing else', 'no thanks'); "
+    "the user says goodbye ('bye', 'take care'), even if you never asked the closing "
+    "question; or the user sends ANOTHER thanks / acknowledgement after you already "
+    "asked the closing question. The sign-off must NOT ask a question and must NOT "
+    "invite them to reach out or ask more. response_type: 'farewell'.\n"
+    "  3. If the user answers the closing question affirmatively WITHOUT saying what "
+    "they need ('yes', 'yes please'), ask briefly what they would like help with "
+    "(response_type 'chitchat'). If the user asks a real question at ANY point — "
+    "even inside a thank-you, e.g. 'thanks! also, what is Dolostat gel?' — ignore "
+    "these closing steps and answer it normally under all the rules above.\n"
+    "Never repeat the same thank-you / you're-welcome / have-a-great-day phrases "
+    "across turns. Use 'farewell' ONLY for the final sign-off — never for a reply "
+    "that answers a question or asks one."
 )
 
 class ChatService:
@@ -357,6 +469,64 @@ class ChatService:
     @staticmethod
     def _is_product_list_question(text: str) -> bool:
         return bool(_PRODUCT_LIST_RE.search(text or ""))
+
+    @staticmethod
+    def _is_careers_question(text: str) -> bool:
+        return bool(_CAREERS_RE.search(text or ""))
+
+    @staticmethod
+    def _no_info_fallback(message: str, standalone: str) -> tuple[str, str]:
+        """Return ``(answer, citations)`` for a no_info turn.
+
+        Careers questions get the openings page + contact email instead of the
+        generic refusal; every other no_info turn keeps the canonical refusal.
+        """
+        if ChatService._is_careers_question(message) or ChatService._is_careers_question(
+            standalone
+        ):
+            return CAREERS_GUIDANCE_MESSAGE, CAREERS_URL
+        return NO_INFO_MESSAGE, ""
+
+    @staticmethod
+    def _ensure_careers_link(
+        answer: str, response_type: str | None, message: str, standalone: str
+    ) -> str:
+        """Guarantee a careers answer carries the openings page link.
+
+        The prompt asks for the link; this covers the rare turn where the model
+        says 'check our website' without it. Only answer/chitchat replies to
+        careers questions are touched.
+        """
+        if response_type not in ("answer", "chitchat") or "bluecrosslabs.com/current-opening" in (
+            answer or ""
+        ):
+            return answer
+        if not (
+            ChatService._is_careers_question(message)
+            or ChatService._is_careers_question(standalone)
+        ):
+            return answer
+        return f"{answer.rstrip()}\n\nYou can see all current openings here: {CAREERS_URL}"
+
+    @staticmethod
+    def _apply_closing(
+        response_type: str | None, answer: str, prior_stage: str | None
+    ) -> tuple[str, str | None, bool]:
+        """Resolve the closing flow. Returns ``(answer, new_closing_stage, ended)``.
+
+        The closing question is asked at most once: if the previous reply already
+        asked it (or the chat already ended) and the model asks again, the reply
+        becomes the final sign-off. Sign-offs are stripped of re-opening sentences.
+        """
+        if response_type == "closing_question" and prior_stage in ("asked", "ended"):
+            response_type = "farewell"
+            answer = random.choice(_FAREWELL_MESSAGES)
+        if response_type == "farewell":
+            cleaned = re.sub(r"\s{2,}", " ", _REOPENING_SENTENCE.sub("", answer)).strip()
+            return cleaned or random.choice(_FAREWELL_MESSAGES), "ended", True
+        if response_type == "closing_question":
+            return answer, "asked", False
+        return answer, None, False
 
     @staticmethod
     def _extract_price_product(text: str) -> str | None:
@@ -724,8 +894,10 @@ class ChatService:
             )
 
         # 4. Build the prompt.
+        prior_stage = getattr(session, "closing_stage", None) if session is not None else None
         messages = self._build_messages(
-            request.message, chat_history, summary, descriptive_map, product_map, video_map
+            request.message, chat_history, summary, descriptive_map, product_map, video_map,
+            closing_stage=prior_stage,
         )
 
         # 5. LLM call.
@@ -748,7 +920,18 @@ class ChatService:
         #     world-knowledge answer through. (Keyed on the declared type, not on
         #     empty ids, since valid dosage answers intentionally cite nothing.)
         if result.get("response_type") == "no_info":
-            answer = NO_INFO_MESSAGE
+            answer, citations = ChatService._no_info_fallback(request.message, standalone)
+            products, videos = [], []
+        answer = ChatService._ensure_careers_link(
+            answer, result.get("response_type"), request.message, standalone
+        )
+
+        # 6b. CLOSING. Ask the closing question at most once; a 'farewell' reply is
+        #     the final sign-off: attach nothing and tell the client the chat ended.
+        answer, closing_stage, conversation_ended = ChatService._apply_closing(
+            result.get("response_type"), answer, prior_stage
+        )
+        if conversation_ended:
             products, videos, citations = [], [], ""
 
         # 7. SAVE (raw query + final answer).
@@ -759,6 +942,7 @@ class ChatService:
             summary=new_summary,
             started_at=request_started_at,
             product_query_counts=counts,
+            closing_stage=closing_stage,
         )
         logger.info(
             "chat_turn_complete",
@@ -781,6 +965,7 @@ class ChatService:
             citations=citations,
             products=products,
             videos=videos,
+            conversation_ended=conversation_ended,
         )
 
     async def answer_stream(self, request: ChatRequest) -> AsyncIterator[dict]:
@@ -974,8 +1159,12 @@ class ChatService:
                 }
                 return
 
+            prior_stage = (
+                getattr(session, "closing_stage", None) if session is not None else None
+            )
             messages = self._build_messages(
-                request.message, chat_history, summary, descriptive_map, product_map, video_map
+                request.message, chat_history, summary, descriptive_map, product_map, video_map,
+                closing_stage=prior_stage,
             )
 
             # 5. Decide the HCP-consent gate BEFORE any token streams, using the
@@ -1010,7 +1199,17 @@ class ChatService:
             #     force the canonical refusal (the model was instructed to stream
             #     that text for no_info, so the `done` answer stays consistent).
             if final.get("response_type") == "no_info":
-                answer = NO_INFO_MESSAGE
+                answer, citations = ChatService._no_info_fallback(request.message, standalone)
+                products, videos = [], []
+            answer = ChatService._ensure_careers_link(
+                answer, final.get("response_type"), request.message, standalone
+            )
+
+            # 7b. CLOSING — same as answer() 6b.
+            answer, closing_stage, conversation_ended = ChatService._apply_closing(
+                final.get("response_type"), answer, prior_stage
+            )
+            if conversation_ended:
                 products, videos, citations = [], [], ""
 
             # 8. SAVE (raw query + final answer).
@@ -1021,6 +1220,7 @@ class ChatService:
                 summary=new_summary,
                 started_at=request_started_at,
                 product_query_counts=counts,
+                closing_stage=closing_stage,
             )
             logger.info(
                 "chat_turn_complete",
@@ -1044,6 +1244,7 @@ class ChatService:
                 "citations": citations,
                 "products": [p.model_dump(mode="json") for p in products],
                 "videos": [v.model_dump(mode="json") for v in videos],
+                "conversation_ended": conversation_ended,
             }
         except Exception as exc:  # noqa: BLE001 - always close the stream gracefully
             logger.exception("chat_stream_failed", error=str(exc))
@@ -1062,6 +1263,7 @@ class ChatService:
         descriptive_map: dict[str, dict],
         product_map: dict[str, dict],
         video_map: dict[str, dict],
+        closing_stage: str | None = None,
     ) -> list[dict]:
         messages: list[dict] = [{"role": "system", "content": _SYSTEM_INSTRUCTIONS}]
         if summary:
@@ -1073,6 +1275,9 @@ class ChatService:
         context = _format_context(descriptive_map, product_map, video_map)
         if context:
             messages.append({"role": "system", "content": f"[RETRIEVED CONTEXT]\n{context}"})
+
+        if closing_stage in _CLOSING_STATE_NOTES:
+            messages.append({"role": "system", "content": _CLOSING_STATE_NOTES[closing_stage]})
 
         messages.append({"role": "user", "content": user_query})
         return messages

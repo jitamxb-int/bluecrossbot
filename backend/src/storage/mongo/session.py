@@ -77,6 +77,11 @@ class ChatSession(Document):
     # about it are routed to email support instead of a detailed answer.
     product_query_counts: dict[str, int] = Field(default_factory=dict)
 
+    # --- conversation closing ---
+    # None = normal chat; "asked" = the last reply asked "anything else I can help
+    # with?"; "ended" = the last reply was the final sign-off. Reset on any other turn.
+    closing_stage: str | None = None
+
     # --- bookkeeping ---
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -230,6 +235,7 @@ class SessionRepository:
         summary: str | None = None,
         started_at: datetime | None = None,
         product_query_counts: dict[str, int] | None = None,
+        closing_stage: str | None = None,
     ) -> ChatSession:
         """Append one user+assistant turn, refresh the summary, update timing.
 
@@ -254,11 +260,14 @@ class SessionRepository:
                 ended_at=now,
                 duration_seconds=(now - turn_start).total_seconds(),
                 product_query_counts=product_query_counts or {},
+                closing_stage=closing_stage,
             )
             await session.insert()
             return session
 
         session.chat_json.extend(turn)
+        # Always overwritten: any non-closing turn resets the closing stage.
+        session.closing_stage = closing_stage
         if summary is not None:
             session.conversation_summary = summary
         if product_query_counts is not None:
