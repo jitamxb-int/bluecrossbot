@@ -347,5 +347,58 @@ class OpenAIChatProvider:
                 return name
         return None
 
+    async def select_indicated_products(
+        self, request: str, candidates: dict[str, str]
+    ) -> set[str] | None:
+        """Return the candidate products that suit the user's request, or None on failure.
+
+        ``candidates`` maps each listed product name to an excerpt of what its
+        documents say it is indicated for. Used to drop products an answer listed for
+        a need they don't treat (e.g. a diabetes drug for hair loss); medical synonyms
+        (high BP = hypertension) count as a match. Best-effort: any error -> None so
+        the caller keeps every product.
+        """
+        if not candidates:
+            return set()
+        self._guard_key()
+        listing = "\n".join(
+            f"- {name}: {excerpt or '(no indication text available)'}"
+            for name, excerpt in candidates.items()
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You screen a medicine list for products that are CLEARLY UNRELATED "
+                    "to the user's need — e.g. a diabetes medicine listed for hair loss. "
+                    "Keep every product that plausibly fits: its indication covers the "
+                    "need, a closely related symptom, or the same therapeutic area "
+                    "(e.g. an expectorant or bronchodilator syrup for cough, a paediatric "
+                    "or adult strength of a fever medicine). Treat standard medical "
+                    "synonyms as the same need ('high BP' = hypertension, 'acidity' = "
+                    "acid-peptic disease/GERD, 'body ache' = pain). A need mentioned only "
+                    "as a side effect or warning does NOT make a product fit. If the user "
+                    "asked for no specific need (e.g. 'list 10 medicines'), keep all. When "
+                    "in doubt, keep. Reply with JSON: {\"relevant\": [exact names of the "
+                    "products to KEEP]}."
+                ),
+            },
+            {"role": "user", "content": f"User request: {request}\n\nProducts:\n{listing}"},
+        ]
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(response.choices[0].message.content or "{}")
+        except (APIError, json.JSONDecodeError) as exc:
+            logger.warning("product_relevance_check_failed", error=str(exc))
+            return None
+        relevant = data.get("relevant")
+        if not isinstance(relevant, list):
+            return None
+        return {str(n).strip() for n in relevant if str(n).strip()}
+
     async def aclose(self) -> None:
         await self._client.close()

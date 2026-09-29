@@ -17,8 +17,10 @@ Implements ``docs/CONVERSATION_HISTORY.md``. Each turn:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import random
+import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -54,7 +56,8 @@ logger = get_logger(__name__)
 _PRODUCT_LIST_RE = re.compile(
     r"\b(?:"
     r"(?:list|enumerate|name|give|show|suggest|recommend|tell)\b.{0,40}?"
-    r"(?:medicine|medication|drug|product|tablet|brand|syrup|ointment|capsule)\w*"
+    r"(?:medicine|medication|meds\b|drug|product|tablet|brand|syrup|ointment|capsule)\w*"
+    r"|alternatives?\s+(?:to|of|for)\b"
     r"|examples?\s+of\b.{0,8}?(?:medicine|medication|drug|product|brand)\w*"
     r"|(?:what|which)\s+(?:medicines?|medications?|drugs?|products?|brands?|tablets?)"
     r"\b.{0,25}?(?:have|has|manufactur\w+|produc\w+|make\w*|stock|offer|sell|available)"
@@ -65,6 +68,104 @@ _PRODUCT_LIST_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+# Narrower than _PRODUCT_LIST_RE: requests for SEVERAL medicines ('suggest some
+# medicines', 'list 10 meds', 'alternatives to X'). For these the PI-priority step
+# (which scopes the context to ONE product's PI/PIL) is skipped so the model keeps
+# every Blue Cross product retrieval found. Single-product questions ('tell me
+# about X tablets', 'dosage of X tablets') deliberately do NOT match.
+_MULTI_PRODUCT_RE = re.compile(
+    r"\b(?:alternatives?|substitutes?)\b"
+    r"|\b(?:list|suggest|recommend|enumerate|name|some|few|any|other|more|\d+)\b[^.?!]{0,30}?"
+    r"\b(?:medicines|medications|meds|drugs|products|brands|tablets|syrups|options)\b"
+    r"|\b(?:what|which)\s+(?:other\s+)?(?:medicines|medications|meds|drugs|products|brands)\b"
+    r"|\bexamples?\s+of\b",
+    re.IGNORECASE,
+)
+
+# PI/PIL `product_name`s are derived from upload filenames and can carry noise
+# ('Pack insert - ', ' PI', 'ver00 web copy', 'Sept 2022'). Stripped only for the
+# product label shown to the model in the context.
+_PDF_NAME_NOISE = re.compile(
+    r"(?i)^\s*pack\s+insert\s*-\s*"
+    r"|\b(?:insert|nashik|exp|final|leamak|nsk|nepal|akums)\b"
+    r"|\bweb\s*copy\d*|\bver\s*\d*\b"
+    r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*[\s_]+\d{2,4}\b"
+    r"|\b20\d\d\b|_?\bpi\b|\(\d+\)"
+)
+
+
+def _display_product_name(name: str | None) -> str:
+    """Clean a PI/PIL product_name for display, e.g. 'Pack insert - Eterna Syrup ver00'."""
+    cleaned = _PDF_NAME_NOISE.sub(" ", (name or "").replace("_", " "))
+    return re.sub(r"\s{2,}", " ", cleaned).strip(" -")
+
+
+# --- Multi-product answer verification (see ChatService._verify_product_list) -----
+NO_PRODUCT_MATCH_MESSAGE = (
+    "I couldn't find a Blue Cross Laboratories product for that in the information I "
+    "have. Please consult a healthcare professional for advice, or email us at "
+    "info@bluecrosslabs.com and our team will be happy to help."
+)
+_LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.*)$")
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+# Where a PI/PIL states what a product IS for: the indication statement itself
+# ('is indicated for…'), else the 'Therapeutic indications' heading. '\b' so
+# 'contraindicated' never matches; 'indications of renal damage' (toxicology) is not
+# a statement and only matches the weaker heading pattern.
+_INDICATED_FOR = re.compile(r"(?<!not )\bindicated (?:for|in|as)\b", re.I)
+# Patient-leaflet wording, used only when a document has no 'indicated for' statement.
+_USED_FOR = re.compile(
+    r"\bused (?:to treat|to relieve|in the treatment of)\b"
+    r"|\bfor the (?:symptomatic )?(?:relief|treatment) of\b",
+    re.I,
+)
+_INDICATION = re.compile(r"\b(?:therapeutic )?indications?\b", re.I)
+
+
+def _brand_key(name: str) -> str:
+    """'MEFTAL-P Suspension' -> 'meftalp'; used to match listed names to real products.
+
+    Spaces around hyphens are collapsed first, so 'TUSQ- D Lozenges' -> 'tusqd'.
+    """
+    first = re.sub(r"\s*-\s*", "-", (name or "").strip()).split(" ")[0]
+    return re.sub(r"[^a-z0-9]", "", first.lower())
+
+
+def _item_name(item_text: str) -> str:
+    """A list item's product name: its bold part, else the text before a dash/colon."""
+    bold = _BOLD.search(item_text)
+    return bold.group(1) if bold else re.split(r"\s[—–:-]\s", item_text)[0]
+
+
+def _listed_names(answer: str) -> list[str]:
+    """Product names an answer lists (list items), plus any bold names in prose."""
+    names = [_item_name(m.group(1)) for line in (answer or "").splitlines()
+             if (m := _LIST_ITEM.match(line))]
+    return names + [m.group(1) for m in _BOLD.finditer(answer or "")]
+
+
+def _indication_excerpt(text: str, per_match: int = 220, max_matches: int = 3) -> str:
+    """What a PI/PIL says the product is for: up to ``max_matches`` distinct
+    'indicated for …' statements, else the first 'Indications' passage."""
+    text = text or ""
+    parts: list[str] = []
+    for pattern in (_INDICATED_FOR, _USED_FOR):  # statements first, leaflet wording after
+        for m in pattern.finditer(text):
+            # From the start of the statement's sentence (at most 60 chars back).
+            start = max(m.start() - 60, text.rfind(". ", 0, m.start()) + 2, 0)
+            part = re.sub(r"\s+", " ", text[start : m.end() + per_match]).strip()
+            if part not in parts:
+                parts.append(part)
+            if len(parts) >= max_matches:
+                break
+        if parts:
+            break
+    if not parts:
+        m = _INDICATION.search(text)
+        start = m.start() if m else 0
+        parts.append(re.sub(r"\s+", " ", text[start : start + 2 * per_match]).strip())
+    return " … ".join(parts)
 
 # Returned (HTTP 200) when a message targets a session past its max duration.
 SESSION_EXPIRED_MESSAGE = (
@@ -308,17 +409,55 @@ _SYSTEM_INSTRUCTIONS = (
 
     # ── 3D. LISTING / ENUMERATING PRODUCTS ────────────────────────────
     "## LISTING / ENUMERATING PRODUCTS OR MEDICINES\n"
-    "When the user asks you to LIST, NAME, ENUMERATE, or give EXAMPLES of "
-    "medicines or products — e.g. 'list me 10 examples of medicine', 'what "
+    "When the user asks you to LIST, NAME, ENUMERATE, SUGGEST, or give EXAMPLES "
+    "or ALTERNATIVES of medicines or products — e.g. 'list me 10 examples of "
+    "medicine', 'what "
     "medicines do you have', 'name some of your products', 'suggest some "
-    "medicines' — list ONLY products whose names appear verbatim in the "
-    "[P#] PRODUCT blocks of the [RETRIEVED CONTEXT]. NEVER add any medicine "
+    "medicines', 'list me 10 meds', 'what can I take for fever and cough', "
+    "'alternatives to X' — list ONLY Blue Cross Laboratories products found in "
+    "the [RETRIEVED CONTEXT]: names in [P#] PRODUCT blocks, or in the "
+    "'[Blue Cross product: …]' label of [D#] blocks. NEVER add any medicine "
     "or product from general knowledge, even if it is well known (e.g. "
     "cetirizine, paracetamol). If the context contains fewer products than "
     "the user asked for, list all that are present, state how many there "
     "are, and do NOT pad the list with anything else. If the context "
     "contains no products at all, respond that you don't have that "
     "information.\n"
+    "- Format each item as the Blue Cross PRODUCT NAME (bold) followed by its "
+    "composition — active ingredient(s) and strength — copied exactly as stated "
+    "in the context, e.g. '**SOLITAIR Tablets** — Montelukast 10 mg + "
+    "Levocetirizine 5 mg'. If the context gives no composition for a product, "
+    "list the name only and say its composition isn't available here. Never "
+    "guess a composition or strength.\n"
+    "- NEVER answer with bare generic/salt names (e.g. 'Paracetamol', "
+    "'Ibuprofen') as the list. A salt may appear only as the composition of a "
+    "listed Blue Cross product.\n"
+    "- Copy each product name exactly as it appears in the label or context. "
+    "Never invent, alter, or combine product names or dosage forms.\n"
+    "- If the user names a symptom, condition, or use, list a product ONLY when "
+    "the context states it is used/indicated for that need — counting standard "
+    "medical synonyms as the same need (e.g. 'high BP' = hypertension, "
+    "'acidity'/'gastric problems' = acid-peptic disease/GERD, 'body ache' = "
+    "pain); never imply a product helps with something the context doesn't say "
+    "it treats. A "
+    "condition mentioned only as a side effect, warning, or contraindication "
+    "(e.g. 'alopecia' listed among adverse reactions) does NOT make the product "
+    "a treatment for it. If the "
+    "user names no need (e.g. 'list me 10 meds'), list Blue Cross products from "
+    "the context, each with a short note of what it is used for if stated.\n"
+    "- For 'alternatives to X', prefer Blue Cross products with a DIFFERENT "
+    "composition used for the same purpose; other products with the same active "
+    "ingredient may be listed only if you say they contain the same ingredient. "
+    "Do not list X itself. Base 'same' vs 'different' ingredient ONLY on the "
+    "compositions shown in the context — never claim a product has different "
+    "active ingredients unless its composition in the context shows it.\n"
+    "- If no relevant Blue Cross product is in the context, reply in one or two "
+    "sentences that you couldn't find a Blue Cross product for that need, "
+    "suggest consulting a healthcare professional, and offer "
+    "info@bluecrosslabs.com — do not substitute generic medicines. Set "
+    "response_type to 'answer' for this reply (not 'no_info').\n"
+    "- Keep the usual advice to consult a healthcare professional. Put the "
+    "[D#] tags you used in source_ids.\n"
     "Put the [P#] tag of EVERY product you list into product_ids. Never "
     "invent product names, image URLs, or video URLs.\n\n"
 
@@ -445,6 +584,58 @@ class ChatService:
         self._sessions = sessions
         self._settings = settings
         self._config = config
+        # Blue Cross catalog used only to verify multi-medicine answers:
+        # brand key -> product_keys (light; warmed at startup), plus a per-brand
+        # cache of full PI/PIL text fetched on demand for brands actually listed.
+        self._brand_catalog: dict[str, set[str]] | None = None
+        self._brand_texts: dict[str, str] = {}
+        self._catalog_retry_at = 0.0
+
+    async def warm_catalog(self) -> None:
+        """Preload the brand catalog (called in the background at startup)."""
+        await self._known_brands()
+
+    async def _known_brands(self) -> dict[str, set[str]]:
+        """Cached brand catalog. On failure returns {} and backs off 5 minutes."""
+        if self._brand_catalog is None and time.monotonic() >= self._catalog_retry_at:
+            try:
+                products = await self._retrieval.pdf_product_catalog()
+            except Exception as exc:  # noqa: BLE001 - verification degrades, never fails a turn
+                self._catalog_retry_at = time.monotonic() + 300
+                logger.warning("brand_catalog_load_failed", error=repr(exc))
+                return {}
+            catalog: dict[str, set[str]] = {}
+            for name, product_keys in products.items():
+                key = _brand_key(_display_product_name(name))
+                if len(key) >= 3:
+                    catalog.setdefault(key, set()).update(product_keys)
+            self._brand_catalog = catalog
+            logger.info("brand_catalog_loaded", brands=len(catalog))
+        return self._brand_catalog or {}
+
+    async def _catalog_for_answer(self, answer: str) -> dict[str, str]:
+        """Brand key -> full PI/PIL text, for verifying ``answer``.
+
+        Every catalog brand is present (so context mentions can be recognised); the
+        full text is fetched (once, cached) only for brands the answer lists.
+        """
+        catalog = await self._known_brands()
+        listed = {_brand_key(n) for n in _listed_names(answer)}
+        wanted = [
+            b for b in catalog if b not in self._brand_texts and any(
+                k and (k.startswith(b) or (len(k) >= 4 and b.startswith(k))) for k in listed
+            )
+        ]
+        results = await asyncio.gather(
+            *(self._retrieval.pdf_texts_for_products(sorted(catalog[b])) for b in wanted),
+            return_exceptions=True,
+        )
+        for brand, texts in zip(wanted, results, strict=True):
+            if isinstance(texts, BaseException):  # fall back to retrieved context only
+                logger.warning("brand_text_load_failed", brand=brand, error=repr(texts))
+                continue
+            self._brand_texts[brand] = "\n".join(t.lower() for t in texts)
+        return {b: self._brand_texts.get(b, "") for b in catalog}
 
     @staticmethod
     def _is_price_question(text: str) -> bool:
@@ -469,6 +660,167 @@ class ChatService:
     @staticmethod
     def _is_product_list_question(text: str) -> bool:
         return bool(_PRODUCT_LIST_RE.search(text or ""))
+
+    @staticmethod
+    def _is_multi_product_question(text: str) -> bool:
+        return bool(_MULTI_PRODUCT_RE.search(text or ""))
+
+    async def _verify_medicine_list(
+        self,
+        answer: str,
+        descriptive_map: dict[str, dict],
+        product_map: dict[str, dict],
+        message: str,
+        standalone: str,
+    ) -> str:
+        """Verify a multi-medicine answer; never fails a turn.
+
+        1. Name check (deterministic): only real Blue Cross products stay.
+        2. Relevance (LLM, synonym-aware): products not indicated for the user's need
+           are dropped. If that check fails, every real product is kept.
+        """
+        if not (
+            ChatService._is_multi_product_question(message)
+            or ChatService._is_multi_product_question(standalone)
+        ):
+            return answer
+        try:
+            catalog = await self._catalog_for_answer(answer)
+            checked = ChatService._verify_product_list(
+                answer, descriptive_map, product_map, catalog
+            )
+            if checked == NO_PRODUCT_MATCH_MESSAGE:
+                return checked
+            candidates: dict[str, str] = {}
+            for line in checked.splitlines():
+                item = _LIST_ITEM.match(line)
+                if item:
+                    name = _item_name(item.group(1))
+                    candidates[name] = ChatService._product_excerpt(name, catalog, descriptive_map)
+            if not candidates:
+                return checked
+            # Judge against what the user typed THIS turn: 'list me 10 meds' or 'suggest
+            # some medicines' name no need, so the model's list stands; a need inferred
+            # from earlier turns (in the rewritten query) is not re-imposed.
+            relevant = await self._llm.select_indicated_products(message, candidates)
+            if relevant is None:
+                return checked
+            # Never drop a product whose documents give no indication statement to
+            # judge by (e.g. a leaflet-only product): keep it.
+            relevant |= {n for n, excerpt in candidates.items() if "indicated" not in excerpt}
+            return ChatService._verify_product_list(
+                checked, descriptive_map, product_map, catalog, relevant=relevant
+            )
+        except Exception as exc:  # noqa: BLE001 - verification is best-effort
+            logger.exception("product_list_verification_failed", error=repr(exc))
+            return answer
+
+    @staticmethod
+    def _product_excerpt(name: str, catalog: dict[str, str], descriptive_map: dict) -> str:
+        """What a listed product is for: its PI/PIL indication passage, else a
+        retrieved chunk that mentions it (e.g. a meftal.com page)."""
+        key = _brand_key(name)
+        with_text = [b for b in catalog if catalog[b]]
+        # Exact brand first ('TUSQ-D' -> tusqd, never tusqdx), then the longest catalog
+        # brand the name starts with ('MEFTAL-500' -> meftal), then a longer brand.
+        candidates = (
+            [b for b in with_text if b == key]
+            or sorted((b for b in with_text if key.startswith(b)), key=len, reverse=True)
+            or sorted((b for b in with_text if len(key) >= 4 and b.startswith(key)), key=len)
+        )
+        if candidates:
+            return _indication_excerpt(catalog[candidates[0]])
+        for payload in descriptive_map.values():
+            text = payload.get("text") or ""
+            if key and key in re.sub(r"[^a-z0-9]", "", text.lower()):
+                return re.sub(r"\s+", " ", text)[:400]
+        return ""
+
+    @staticmethod
+    def _verify_product_list(
+        answer: str,
+        descriptive_map: dict[str, dict],
+        product_map: dict[str, dict],
+        known_brands: dict[str, str] | None = None,
+        relevant: set[str] | None = None,
+    ) -> str:
+        """Keep only listed items that are real (and, if given, relevant) Blue Cross products.
+
+        A list item survives when its product name matches a Blue Cross product: a
+        PI/PIL label or catalog product in the retrieved context, or a ``known_brands``
+        catalog product (brand key -> PI/PIL text), e.g. one on a meftal.com page or
+        from an earlier turn. With ``relevant`` (names confirmed by the relevance
+        check), items not in it are removed too. Generic salts and misspelt names are
+        removed; if nothing valid is left the reply becomes NO_PRODUCT_MATCH_MESSAGE.
+        """
+        texts_by_brand: dict[str, list[str]] = {}
+        for payload in descriptive_map.values():
+            if payload.get("pdf_type"):
+                key = _brand_key(_display_product_name(payload.get("product_name")))
+                if len(key) >= 3:
+                    texts_by_brand.setdefault(key, []).append((payload.get("text") or "").lower())
+        for payload in product_map.values():
+            key = _brand_key(payload.get("product_name") or "")
+            if len(key) >= 3:
+                texts_by_brand.setdefault(key, []).append((payload.get("text") or "").lower())
+        known_brands = known_brands or {}
+        # Catalog brands described in non-PDF chunks (website pages) count too.
+        for brand in known_brands:
+            pattern = re.compile(
+                r"\b" + r"[\s\-+®]*".join(re.escape(ch) for ch in brand) + r"\b", re.I
+            )
+            for payload in descriptive_map.values():
+                text = payload.get("text") or ""
+                if not payload.get("pdf_type") and pattern.search(text):
+                    texts_by_brand.setdefault(brand, []).append(text.lower())
+        if not texts_by_brand and not known_brands:
+            return answer  # nothing to verify against
+
+        def norm(name: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+        relevant_norm = None if relevant is None else {norm(n) for n in relevant}
+
+        def matching(name: str, keys) -> list[str]:
+            listed = _brand_key(name)
+            return [
+                b for b in keys
+                if listed and (listed.startswith(b) or (len(listed) >= 4 and b.startswith(listed)))
+            ]
+
+        def keep(name: str) -> bool:
+            # A real Blue Cross product: in the retrieved context, or in the catalog
+            # (e.g. surfaced in an earlier turn of the conversation).
+            if not (matching(name, texts_by_brand) or matching(name, known_brands)):
+                return False
+            return relevant_norm is None or norm(name) in relevant_norm
+
+        lines, kept_items, dropped = answer.splitlines(), 0, []
+        out: list[str] = []
+        for line in lines:
+            item = _LIST_ITEM.match(line)
+            if not item:
+                out.append(line)
+                continue
+            name = _item_name(item.group(1))
+            if keep(name):
+                out.append(line)
+                kept_items += 1
+            else:
+                dropped.append(name)
+        if dropped:
+            logger.info("product_list_items_dropped", dropped=dropped, kept=kept_items)
+
+        if kept_items:
+            return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+        # No valid list items. Keep a prose answer only if it names a real, relevant
+        # Blue Cross product; otherwise it is generic/unsupported -> clear no-match.
+        names = [m.group(1) for m in _BOLD.finditer(answer)] + re.findall(
+            r"\b[A-Z][A-Za-z0-9+]*(?:-[A-Za-z0-9+]+)*\b", answer
+        )
+        if not dropped and any(keep(n) for n in names):
+            return answer
+        return NO_PRODUCT_MATCH_MESSAGE
 
     @staticmethod
     def _is_careers_question(text: str) -> bool:
@@ -863,7 +1215,12 @@ class ChatService:
             _merge_products(product_map, product_points)
 
         # 3a1. PI-priority: prefer the linked PI document, fall back to its PIL.
-        descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
+        #      Skipped for multi-medicine requests, which it would narrow to ONE product.
+        if not (
+            ChatService._is_multi_product_question(request.message)
+            or ChatService._is_multi_product_question(standalone)
+        ):
+            descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
 
         # 3a. PRODUCT QUERY GATE. If the user has asked > limit questions about the
         #     same product, stop answering in detail and route to email support.
@@ -925,6 +1282,10 @@ class ChatService:
         answer = ChatService._ensure_careers_link(
             answer, result.get("response_type"), request.message, standalone
         )
+        if result.get("response_type") == "answer":
+            answer = await self._verify_medicine_list(
+                answer, descriptive_map, product_map, request.message, standalone
+            )
 
         # 6b. CLOSING. Ask the closing question at most once; a 'farewell' reply is
         #     the final sign-off: attach nothing and tell the client the chat ended.
@@ -1117,7 +1478,14 @@ class ChatService:
                 _merge_products(product_map, product_points)
 
             # PI-priority: prefer the linked PI document, fall back to its PIL.
-            descriptive_map = await self._apply_pi_priority(standalone, descriptive_map, top_k)
+            # Skipped for multi-medicine requests (see answer() 3a1).
+            if not (
+                ChatService._is_multi_product_question(request.message)
+                or ChatService._is_multi_product_question(standalone)
+            ):
+                descriptive_map = await self._apply_pi_priority(
+                    standalone, descriptive_map, top_k
+                )
 
             session_consented = bool(session is not None and session.hcp_consent)
 
@@ -1181,9 +1549,18 @@ class ChatService:
                 "requires_consent": requires_consent,
             }
             final: dict = {}
+            # Multi-medicine answers are verified after generation (items can be
+            # removed), so they are not streamed token-by-token: the client keeps its
+            # typing indicator and shows the verified answer once, from `done` —
+            # nothing appears and then disappears.
+            stream_deltas = not (
+                ChatService._is_multi_product_question(request.message)
+                or ChatService._is_multi_product_question(standalone)
+            )
             async for event in self._llm.stream_structured(messages):
                 if "delta" in event:
-                    yield {"type": "delta", "text": event["delta"]}
+                    if stream_deltas:
+                        yield {"type": "delta", "text": event["delta"]}
                 elif "final" in event:
                     final = event["final"]
 
@@ -1204,6 +1581,10 @@ class ChatService:
             answer = ChatService._ensure_careers_link(
                 answer, final.get("response_type"), request.message, standalone
             )
+            if final.get("response_type") == "answer":
+                answer = await self._verify_medicine_list(
+                    answer, descriptive_map, product_map, request.message, standalone
+                )
 
             # 7b. CLOSING — same as answer() 6b.
             answer, closing_stage, conversation_ended = ChatService._apply_closing(
@@ -1326,7 +1707,13 @@ def _format_context(
     for tag, payload in descriptive_map.items():
         text = (payload.get("text") or "").strip()
         if text:
-            blocks.append(f"[{tag}] {text}")
+            # PI/PIL chunks often never name their product in the text itself, so
+            # label them with the product they belong to (from the payload).
+            label = _display_product_name(payload.get("product_name"))
+            if payload.get("pdf_type") and label:
+                blocks.append(f"[{tag}] [Blue Cross product: {label}] {text}")
+            else:
+                blocks.append(f"[{tag}] {text}")
     for tag, p in product_map.items():
         blocks.append(
             f"[{tag}] PRODUCT: {p.get('product_name', '')} "

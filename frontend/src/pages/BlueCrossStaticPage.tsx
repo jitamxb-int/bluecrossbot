@@ -476,6 +476,9 @@ function parseBold(text: string): React.ReactNode {
 // when there are >=2 such separators (clearly a list) — avoids touching a lone dash
 // in prose. Handles en/em dashes too.
 function normalizeInlineLists(text: string): string {
+    // Already a line-by-line list: leave it alone, so a dash inside an item
+    // ("- **KOLQ Syrup** — Paracetamol 125 mg…") is not split into a new bullet.
+    if (/^\s*[-*•]\s+/m.test(text)) return text;
     const sepCount = (text.match(/\s[-–—]\s+/g) || []).length;
     if (sepCount >= 2) {
         return text.replace(/\s+[-–—]\s+/g, '\n- ');

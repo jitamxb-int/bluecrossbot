@@ -213,6 +213,42 @@ class QdrantRepository:
         logger.info("collection_cleared", collection=name, deleted=existing)
         return existing
 
+    async def scroll_payloads(
+        self,
+        name: str,
+        fields: list[str],
+        require_field: str | None = None,
+        match_any: tuple[str, list[str]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the selected payload ``fields`` of every (matching) point.
+
+        Read-only, payload-only scroll (no vectors, no ranking). ``require_field``
+        keeps only points that carry that field (e.g. ``pdf_type`` for PI/PIL docs);
+        ``match_any=(field, values)`` restricts to points whose indexed keyword
+        ``field`` is one of ``values`` (e.g. a product's ``product_key``s).
+        """
+        if not await self._client.collection_exists(name):
+            return []
+        wanted = list(dict.fromkeys([*fields, *([require_field] if require_field else [])]))
+        flt = (
+            Filter(must=[FieldCondition(key=match_any[0], match=MatchAny(any=match_any[1]))])
+            if match_any
+            else None
+        )
+        rows: list[dict[str, Any]] = []
+        offset = None
+        while True:
+            points, offset = await self._client.scroll(
+                collection_name=name, limit=1000, offset=offset, scroll_filter=flt,
+                with_payload=wanted, with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                if require_field is None or payload.get(require_field):
+                    rows.append(payload)
+            if offset is None:
+                return rows
+
     async def search(
         self,
         name: str,
