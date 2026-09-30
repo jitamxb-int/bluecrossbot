@@ -76,8 +76,16 @@ _PRODUCT_LIST_RE = re.compile(
 # about X tablets', 'dosage of X tablets') deliberately do NOT match.
 _MULTI_PRODUCT_RE = re.compile(
     r"\b(?:alternatives?|substitutes?)\b"
-    r"|\b(?:list|suggest|recommend|enumerate|name|some|few|any|other|more|\d+)\b[^.?!]{0,30}?"
-    r"\b(?:medicines|medications|meds|drugs|products|brands|tablets|syrups|options)\b"
+    # A request/quantity word right before the plural noun (at most 2 words between):
+    # 'suggest me some medicines', '5 popular products'. Not 'tell me more about
+    # ANGICAM tablets' ('more' is not a quantity here and is deliberately excluded).
+    r"|\b(?:list|suggest|recommend|enumerate|name|give|show|some|few|any|other)(?:\s+\w+){0,2}\s+"
+    r"(?:medicines|medications|meds|drugs|products|brands|tablets|syrups|options)\b"
+    # A count of products ('5 popular products', '4 popular product for each division').
+    # Dosage-form nouns are excluded here so 'take 2 tablets daily' / '500 mg tablet'
+    # (dosage questions) are not read as list requests.
+    r"|\b(?:[2-9]|[1-9]\d)(?:\s+\w+){0,2}\s+"
+    r"(?:medicines?|medications?|meds|drugs?|products?|brands?)\b"
     r"|\b(?:what|which)\s+(?:other\s+)?(?:medicines|medications|meds|drugs|products|brands)\b"
     r"|\bexamples?\s+of\b",
     re.IGNORECASE,
@@ -108,6 +116,17 @@ NO_PRODUCT_MATCH_MESSAGE = (
     "info@bluecrosslabs.com and our team will be happy to help."
 )
 _LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.*)$")
+# A list item that describes a product ('**Composition**: …', '  - Dosage: …') rather
+# than naming one. Such items, and indented sub-items, are never checked as products.
+_ATTRIBUTE_ITEM = re.compile(
+    r"^(?:\*\*)?\s*(?:composition|active ingredients?|ingredients?|indications?|uses?"
+    r"|used for|dosage(?: form)?|doses?|how to (?:use|take)|administration|side effects?"
+    r"|common side effects|adverse (?:effects|reactions)|precautions?|warnings?"
+    r"|contraindications?|interactions?|storage|forms?|strengths?|pack(?: size)?|category"
+    r"|division|note|key information|mechanism(?: of action)?|pregnancy|availability"
+    r"|benefits?|who should (?:not )?take|price)\b[^:\n]{0,20}:",
+    re.IGNORECASE,
+)
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 # Where a PI/PIL states what a product IS for: the indication statement itself
 # ('is indicated for…'), else the 'Therapeutic indications' heading. '\b' so
@@ -227,13 +246,33 @@ _FAREWELL_MESSAGES = (
     "It was a pleasure helping you. Goodbye and take care!",
     "Glad I could help. Have a good day — goodbye!",
 )
-# Sentences that re-open the chat ("feel free to reach out", "if you have any more
-# questions…"); stripped from the final sign-off so it actually closes the chat.
-_REOPENING_SENTENCE = re.compile(
-    r"[^.!?]*\b(?:feel free|don'?t hesitate|reach out|let me know|i'?m (?:always )?here"
-    r"|any (?:more|other|further) (?:questions|help|assistance)|anything else)\b[^.!?]*[.!?]?",
+# Closing only happens on a real closing signal ('thanks', 'bye', 'no, that's all' …)
+# and never on a problem report ('this number is not working').
+_CLOSING_SIGNAL = re.compile(
+    r"\b(?:thank\w*|thanks|thx|ty|bye|goodbye|take care|see you|ok(?:ay)?|no|nope|nothing"
+    r"|that'?s all|done|great|cool|noted|same to you|kind|appreciate\w*|cheers)\b",
     re.IGNORECASE,
 )
+_PROBLEM_REPORT = re.compile(
+    r"\b(?:not working|doesn'?t work|isn'?t working|broken|error|issue|problem|wrong"
+    r"|unable|can'?t|cannot|didn'?t (?:get|receive|work)|no (?:reply|response|answer))\b",
+    re.IGNORECASE,
+)
+# Sentences that re-open the chat ("feel free to reach out", "if you have any more
+# questions…"); stripped from the final sign-off so it actually closes the chat.
+_REOPENING_PHRASE = re.compile(
+    r"\b(?:feel free|don'?t hesitate|reach out|let me know|i'?m (?:always )?here"
+    r"|any (?:more|other|further) (?:questions|help|assistance)|anything else)\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_reopening_sentences(text: str) -> str:
+    """Drop the sentences of a sign-off that re-open the chat. Sentences end only at
+    punctuation followed by whitespace, so an email/URL ('info@bluecrosslabs.com') is
+    never cut in half."""
+    sentences = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    return " ".join(s for s in sentences if s and not _REOPENING_PHRASE.search(s)).strip()
 # Injected before the user's message so the model knows the closing state instead
 # of inferring it from the transcript.
 _CLOSING_STATE_NOTES = {
@@ -362,6 +401,27 @@ _SYSTEM_INSTRUCTIONS = (
     "Return empty product_ids and source_ids for these purchase questions; "
     "populate video_ids only if a video genuinely helps.\n\n"
     
+    # ── 3B2. CONTACTING BLUE CROSS ────────────────────────────────────
+    "## CONTACTING BLUE CROSS / A REPRESENTATIVE\n"
+    "When the user wants to contact, connect with, or speak to Blue Cross "
+    "Laboratories, 'your agent', a representative, the team, sales, or customer "
+    "care — and does NOT ask for the C&F agent / depot / distributor of a specific "
+    "city or region — give Blue Cross Laboratories' OWN official contact: the "
+    "email info@bluecrosslabs.com, plus the corporate office phone number only "
+    "if it appears in the [RETRIEVED CONTEXT].\n"
+    "- C&F agents, depots, stockists, and distributors listed in the context "
+    "(often separate firms with their own email domains, e.g. kanchanpharma.com, "
+    "gmail.com) are regional supply-chain partners, not Blue Cross's contact "
+    "channel. Share their details ONLY when the user explicitly asks for the C&F "
+    "agent / depot / distributor of a named city or region, and then only that "
+    "one. Never pick one when no location was asked for, and never present a "
+    "third-party email as Blue Cross's email.\n"
+    "- If the user wants a local or medical representative, say the team can "
+    "connect them and ask them to email info@bluecrosslabs.com with their "
+    "location and requirement.\n"
+    "- If the user says a phone number isn't working, apologise briefly and "
+    "offer info@bluecrosslabs.com; never invent other numbers or emails.\n\n"
+
     # ── 3C. PRICING / COST OF MEDICINE ────────────────────────────────
     "## PRICING / COST OF MEDICINE\n"
     "When the user asks about the PRICE, COST, MRP, or pricing of any medicine or "
@@ -461,6 +521,24 @@ _SYSTEM_INSTRUCTIONS = (
     "Put the [P#] tag of EVERY product you list into product_ids. Never "
     "invent product names, image URLs, or video URLs.\n\n"
 
+    # ── 3E. PRODUCT DIVISIONS ─────────────────────────────────────────
+    "## PRODUCT DIVISIONS\n"
+    "A product's division is the one stated for THAT product: the 'Division:' "
+    "in its '[Blue Cross product: … | Division: …]' label or its PRODUCT block. "
+    "This is authoritative.\n"
+    "- Overview or marketing text about a division (e.g. 'Our sales personnel "
+    "promote brands like …', division pages, website section links) is NOT "
+    "authoritative for classifying a product. If it conflicts with a product's own "
+    "Division, always use the product's own Division.\n"
+    "- When grouping products by division, place each product only under the "
+    "division its own label/record states. If a product's division is not stated "
+    "for it in the context, do not assign it to a division — pick another product "
+    "whose division is stated, or say its division isn't confirmed.\n"
+    "- Never infer a division from a brand name, a product family, or a guess.\n"
+    "- If an earlier turn in this conversation assigned a product to a different "
+    "division than its label/record states, the label/record wins: state the "
+    "correct division and briefly acknowledge the earlier mistake.\n\n"
+
     # ── 4. INTERNAL TAGS ──────────────────────────────────────────────
     "## INTERNAL TAGS\n"
     "Context is tagged as [D1], [D2] (descriptive), [P1], [P2] (products), "
@@ -547,7 +625,9 @@ _SYSTEM_INSTRUCTIONS = (
     "kind'), acknowledgements with no new question ('ok', 'great', 'noted', 'same to "
     "you', 'I will email them now'), and farewells ('bye', 'take care', 'see you'). "
     "Treat them as signs the user is wrapping up — NOT as an invitation to keep "
-    "chatting. Follow these steps:\n"
+    "chatting. A problem report or complaint (e.g. 'this number is not working', "
+    "'the link is broken', 'I didn't get a reply') is NEVER a closing signal — help "
+    "with it and keep the chat open. Follow these steps:\n"
     "  1. FIRST closing signal (thanks / acknowledgement), and you have NOT yet asked "
     "the closing question in this chat: reply with a very short acknowledgement "
     "(a few words at most) followed by ONE closing question, e.g. 'Is there anything "
@@ -590,6 +670,9 @@ class ChatService:
         self._brand_catalog: dict[str, set[str]] | None = None
         self._brand_texts: dict[str, str] = {}
         self._catalog_retry_at = 0.0
+        # brand key -> its division, from PI/PIL metadata (only brands whose products
+        # all share one division); used to keep division-wise lists correct.
+        self._brand_division: dict[str, str] = {}
 
     async def warm_catalog(self) -> None:
         """Preload the brand catalog (called in the background at startup)."""
@@ -605,11 +688,14 @@ class ChatService:
                 logger.warning("brand_catalog_load_failed", error=repr(exc))
                 return {}
             catalog: dict[str, set[str]] = {}
-            for name, product_keys in products.items():
+            divisions: dict[str, set[str]] = {}
+            for name, entry in products.items():
                 key = _brand_key(_display_product_name(name))
                 if len(key) >= 3:
-                    catalog.setdefault(key, set()).update(product_keys)
+                    catalog.setdefault(key, set()).update(entry["keys"])
+                    divisions.setdefault(key, set()).update(entry["divisions"])
             self._brand_catalog = catalog
+            self._brand_division = {k: next(iter(d)) for k, d in divisions.items() if len(d) == 1}
             logger.info("brand_catalog_loaded", brands=len(catalog))
         return self._brand_catalog or {}
 
@@ -676,7 +762,9 @@ class ChatService:
         """Verify a multi-medicine answer; never fails a turn.
 
         1. Name check (deterministic): only real Blue Cross products stay.
-        2. Relevance (LLM, synonym-aware): products not indicated for the user's need
+        2. Division check (deterministic): in division-wise lists, each product is
+           placed under the division its own PI/PIL metadata states.
+        3. Relevance (LLM, synonym-aware): products not indicated for the user's need
            are dropped. If that check fails, every real product is kept.
         """
         if not (
@@ -691,10 +779,13 @@ class ChatService:
             )
             if checked == NO_PRODUCT_MATCH_MESSAGE:
                 return checked
+            checked = ChatService._fix_division_sections(checked, self._brand_division)
             candidates: dict[str, str] = {}
             for line in checked.splitlines():
                 item = _LIST_ITEM.match(line)
-                if item:
+                if item and not re.match(r"^(?:\s{2,}|\t)", line) and not _ATTRIBUTE_ITEM.match(
+                    item.group(1)
+                ):
                     name = _item_name(item.group(1))
                     candidates[name] = ChatService._product_excerpt(name, catalog, descriptive_map)
             if not candidates:
@@ -714,6 +805,87 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001 - verification is best-effort
             logger.exception("product_list_verification_failed", error=repr(exc))
             return answer
+
+    @staticmethod
+    def _fix_division_sections(answer: str, brand_division: dict[str, str]) -> str:
+        """Put every listed product under the division its own metadata states.
+
+        Only acts on answers grouped under division headings (a non-list line naming
+        a division). A product listed under the wrong heading is moved to the end of
+        its correct division's list, or removed if the answer has no such section.
+        Products whose division is unknown or ambiguous in the metadata are left as
+        they are. Numbered lists are renumbered.
+        """
+        if not brand_division:
+            return answer
+        # Division names come from the metadata itself; longest first so e.g.
+        # 'Blue Cross Life Sciences Division' is matched before 'Blue Cross Division'.
+        division_names = sorted(set(brand_division.values()), key=len, reverse=True)
+
+        def heading_division(line: str) -> str | None:
+            if _LIST_ITEM.match(line) or len(line) > 90:
+                return None
+            for division in division_names:
+                if division.lower() in line.lower():
+                    return division
+            return None
+
+        def product_division(name: str) -> str | None:
+            key = _brand_key(name)
+            if key in brand_division:
+                return brand_division[key]
+            prefixes = sorted((b for b in brand_division if key.startswith(b)), key=len)
+            return brand_division[prefixes[-1]] if prefixes else None
+
+        # Split into segments: text before the first heading, then one per heading.
+        segments: list[dict] = [{"division": None, "lines": []}]
+        for line in answer.splitlines():
+            division = heading_division(line)
+            if division:
+                segments.append({"division": division, "lines": [line]})
+            else:
+                segments[-1]["lines"].append(line)
+        if not any(s["division"] for s in segments):
+            return answer
+
+        moves: dict[str, list[str]] = {}
+        moved = []
+        for seg in segments:
+            if not seg["division"]:
+                continue
+            kept = []
+            for line in seg["lines"]:
+                item = _LIST_ITEM.match(line)
+                actual = product_division(_item_name(item.group(1))) if item else None
+                if actual and actual != seg["division"]:
+                    moves.setdefault(actual, []).append(line)
+                    moved.append((_item_name(item.group(1)), seg["division"], actual))
+                else:
+                    kept.append(line)
+            seg["lines"] = kept
+        if not moved:
+            return answer
+        by_division = {s["division"]: s for s in segments if s["division"]}
+        for division, lines in moves.items():
+            seg = by_division.get(division)
+            if seg is None:
+                continue  # no section for its real division in this answer: drop it
+            last_item = max(
+                (i for i, ln in enumerate(seg["lines"]) if _LIST_ITEM.match(ln)), default=0
+            )
+            seg["lines"][last_item + 1 : last_item + 1] = lines
+        logger.info("division_items_moved", moved=moved)
+
+        out: list[str] = []
+        for seg in segments:
+            number = 0
+            for line in seg["lines"]:
+                numbered = re.match(r"^(\s*)\d+([.)])(\s+.*)$", line)
+                if numbered:
+                    number += 1
+                    line = f"{numbered.group(1)}{number}{numbered.group(2)}{numbered.group(3)}"
+                out.append(line)
+        return "\n".join(out)
 
     @staticmethod
     def _product_excerpt(name: str, catalog: dict[str, str], descriptive_map: dict) -> str:
@@ -799,7 +971,11 @@ class ChatService:
         out: list[str] = []
         for line in lines:
             item = _LIST_ITEM.match(line)
-            if not item:
+            # Not a product item: plain text, an indented sub-item, or a detail such as
+            # '**Composition**: …' — keep it as it is.
+            if not item or re.match(r"^(?:\s{2,}|\t)", line) or _ATTRIBUTE_ITEM.match(
+                item.group(1)
+            ):
                 out.append(line)
                 continue
             name = _item_name(item.group(1))
@@ -862,19 +1038,31 @@ class ChatService:
 
     @staticmethod
     def _apply_closing(
-        response_type: str | None, answer: str, prior_stage: str | None
+        response_type: str | None,
+        answer: str,
+        prior_stage: str | None,
+        message: str | None = None,
     ) -> tuple[str, str | None, bool]:
         """Resolve the closing flow. Returns ``(answer, new_closing_stage, ended)``.
 
         The closing question is asked at most once: if the previous reply already
         asked it (or the chat already ended) and the model asks again, the reply
         becomes the final sign-off. Sign-offs are stripped of re-opening sentences.
+        With ``message``, a reply may only close (or ask the closing question) if the
+        user's message is a closing signal and not a problem report — so e.g. 'this
+        number is not working' is answered normally and the chat stays open.
         """
+        if (
+            message is not None
+            and response_type in ("closing_question", "farewell")
+            and not (_CLOSING_SIGNAL.search(message) and not _PROBLEM_REPORT.search(message))
+        ):
+            return answer, None, False
         if response_type == "closing_question" and prior_stage in ("asked", "ended"):
             response_type = "farewell"
             answer = random.choice(_FAREWELL_MESSAGES)
         if response_type == "farewell":
-            cleaned = re.sub(r"\s{2,}", " ", _REOPENING_SENTENCE.sub("", answer)).strip()
+            cleaned = re.sub(r"\s{2,}", " ", _strip_reopening_sentences(answer)).strip()
             return cleaned or random.choice(_FAREWELL_MESSAGES), "ended", True
         if response_type == "closing_question":
             return answer, "asked", False
@@ -1290,7 +1478,7 @@ class ChatService:
         # 6b. CLOSING. Ask the closing question at most once; a 'farewell' reply is
         #     the final sign-off: attach nothing and tell the client the chat ended.
         answer, closing_stage, conversation_ended = ChatService._apply_closing(
-            result.get("response_type"), answer, prior_stage
+            result.get("response_type"), answer, prior_stage, request.message
         )
         if conversation_ended:
             products, videos, citations = [], [], ""
@@ -1588,7 +1776,7 @@ class ChatService:
 
             # 7b. CLOSING — same as answer() 6b.
             answer, closing_stage, conversation_ended = ChatService._apply_closing(
-                final.get("response_type"), answer, prior_stage
+                final.get("response_type"), answer, prior_stage, request.message
             )
             if conversation_ended:
                 products, videos, citations = [], [], ""
@@ -1707,17 +1895,20 @@ def _format_context(
     for tag, payload in descriptive_map.items():
         text = (payload.get("text") or "").strip()
         if text:
-            # PI/PIL chunks often never name their product in the text itself, so
-            # label them with the product they belong to (from the payload).
+            # PI/PIL chunks often never name their product (or its division) in the
+            # text itself, so label them with both, from the payload.
             label = _display_product_name(payload.get("product_name"))
             if payload.get("pdf_type") and label:
+                division = payload.get("division")
+                label += f" | Division: {division}" if division else ""
                 blocks.append(f"[{tag}] [Blue Cross product: {label}] {text}")
             else:
                 blocks.append(f"[{tag}] {text}")
     for tag, p in product_map.items():
         blocks.append(
             f"[{tag}] PRODUCT: {p.get('product_name', '')} "
-            f"(category: {p.get('category') or 'n/a'}). {p.get('text', '')}"
+            f"(category: {p.get('category') or 'n/a'}; division: {p.get('division') or 'n/a'}). "
+            f"{p.get('text', '')}"
         )
     for tag, v in video_map.items():
         blocks.append(

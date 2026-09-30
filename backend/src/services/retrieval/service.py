@@ -61,21 +61,25 @@ class RetrievalService:
             query_text=query if hybrid else None,
         )
 
-    async def pdf_product_catalog(self) -> dict[str, set[str]]:
-        """Every product with an ingested PI/PIL document -> its ``product_key``s.
+    async def pdf_product_catalog(self) -> dict[str, dict]:
+        """Every product with an ingested PI/PIL document -> ``{"keys", "divisions"}``.
 
         The Blue Cross product catalog, read with a light payload-only scroll
-        (names and keys only — no text, no vectors, no search).
+        (names, keys and divisions only — no text, no vectors, no search).
         """
         rows = await self._repository.scroll_payloads(
-            self._settings.qdrant_collection_name, ["product_name", "product_key"],
+            self._settings.qdrant_collection_name,
+            ["product_name", "product_key", "division"],
             require_field="pdf_type",
         )
-        catalog: dict[str, set[str]] = {}
+        catalog: dict[str, dict] = {}
         for row in rows:
             name, key = row.get("product_name"), row.get("product_key")
             if isinstance(name, str) and name.strip() and isinstance(key, str) and key:
-                catalog.setdefault(name, set()).add(key)
+                entry = catalog.setdefault(name, {"keys": set(), "divisions": set()})
+                entry["keys"].add(key)
+                if row.get("division"):
+                    entry["divisions"].add(row["division"])
         return catalog
 
     async def pdf_texts_for_products(self, product_keys: list[str]) -> list[str]:
