@@ -22,6 +22,13 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Entry files with FIXED names — widget.js (embedded on client sites) and the
+    # pages that load the hashed bundles. Browsers must revalidate them on every load
+    # so a redeploy reaches client sites immediately instead of a cached old widget.
+    location = /widget.js   { add_header Cache-Control "no-cache" always; try_files $uri =404; }
+    location = /widget.html { add_header Cache-Control "no-cache" always; try_files $uri =404; }
+    location = /index.html  { add_header Cache-Control "no-cache" always; }
+
     # Real static assets: serve the file or 404 — never fall back to index.html.
     # Prevents a missing /widget.js from being returned as SPA HTML (which the
     # browser then fails to execute as JavaScript).
