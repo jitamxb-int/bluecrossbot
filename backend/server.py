@@ -8,6 +8,7 @@ stores them on ``app.state``), registers middleware, mounts the API router under
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -163,6 +164,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.admin_auth_service = AdminAuthService(admin_repo)
             logger.info("mongo_session_store_ready", database=settings.mongodb_db)
+            # Preload the Blue Cross product catalog (used to verify medicine lists)
+            # in the background so the first list question doesn't wait for it.
+            app.state.catalog_warmup = asyncio.create_task(
+                app.state.chat_service.warm_catalog()
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("mongo_init_failed", error=str(exc))
             app.state.chat_unavailable_reason = f"{type(exc).__name__}: {exc}"
@@ -173,6 +179,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        warmup = getattr(app.state, "catalog_warmup", None)
+        if warmup is not None and not warmup.done():
+            warmup.cancel()
         await client.close()
         await embedding.aclose()
         await llm.aclose()

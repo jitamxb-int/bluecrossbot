@@ -476,6 +476,9 @@ function parseBold(text: string): React.ReactNode {
 // when there are >=2 such separators (clearly a list) — avoids touching a lone dash
 // in prose. Handles en/em dashes too.
 function normalizeInlineLists(text: string): string {
+    // Already a line-by-line list: leave it alone, so a dash inside an item
+    // ("- **KOLQ Syrup** — Paracetamol 125 mg…") is not split into a new bullet.
+    if (/^\s*[-*•]\s+/m.test(text)) return text;
     const sepCount = (text.match(/\s[-–—]\s+/g) || []).length;
     if (sepCount >= 2) {
         return text.replace(/\s+[-–—]\s+/g, '\n- ');
@@ -797,6 +800,10 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     // see updated state) stops mutating the replaced message immediately.
     const [sessionDenied, setSessionDenied] = useState(false);
     const deniedRef = useRef(false);
+    // Set true when the backend marks a reply as the final sign-off
+    // (`conversation_ended`): the chat is closed and the input is locked.
+    const [conversationEnded, setConversationEnded] = useState(false);
+    const chatClosed = sessionDenied || conversationEnded;
     const messagesEndRef = useRef<HTMLDivElement>(null);
  
     useEffect(() => {
@@ -882,6 +889,7 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         videos: evt.videos ?? [],
                         citations: evt.citations ?? '',
                     });
+                    if (evt.conversation_ended) setConversationEnded(true);
                 } else if (evt.type === 'error') {
                     if (!botStarted) startBot();
                     setBot({ role: 'bot', text: evt.detail || 'Something went wrong. Please try again.' });
@@ -1019,13 +1027,15 @@ const ChatOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             onChange={(e) => setInputText(e.target.value)}
                             placeholder={sessionDenied
                                 ? 'Session ended — refresh the page to start a new chat.'
-                                : 'Type your message to Luna...'}
-                            disabled={isLoading || sessionDenied}
+                                : conversationEnded
+                                    ? 'Chat ended — click End and reopen Luna to start a new chat.'
+                                    : 'Type your message to Luna...'}
+                            disabled={isLoading || chatClosed}
                             className="flex-1 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-60"
                         />
                         <button
                             type="submit"
-                            disabled={!inputText.trim() || isLoading || sessionDenied}
+                            disabled={!inputText.trim() || isLoading || chatClosed}
                             className="h-12 w-12 flex items-center justify-center rounded-xl text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5"
                             style={{ background: BLUE }}
                         >
