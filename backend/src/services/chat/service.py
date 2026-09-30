@@ -748,6 +748,20 @@ class ChatService:
         return bool(_PRODUCT_LIST_RE.search(text or ""))
 
     @staticmethod
+    def _wants_product_catalog(message: str, standalone: str) -> bool:
+        """Should retrieval be widened with catalog products (existing step 3a0)?
+
+        True for listing questions ('list me 10 medicines') and for any request for
+        several products, e.g. 'what products come under pain and inflammation
+        management' — without the catalog products such category questions often got
+        only overview text and no concrete products to answer with.
+        """
+        return any(
+            ChatService._is_product_list_question(t) or ChatService._is_multi_product_question(t)
+            for t in (message, standalone)
+        )
+
+    @staticmethod
     def _is_multi_product_question(text: str) -> bool:
         return bool(_MULTI_PRODUCT_RE.search(text or ""))
 
@@ -1387,9 +1401,7 @@ class ChatService:
         #     knowledge (e.g. cetirizine). Re-run retrieval scoped to the
         #     product catalog and widen the context so every listed product is a
         #     real Blue Cross product.
-        if ChatService._is_product_list_question(
-            request.message
-        ) or ChatService._is_product_list_question(standalone):
+        if ChatService._wants_product_catalog(request.message, standalone):
             logger.info(
                 "product_list_query_detected",
                 message=request.message,
@@ -1650,9 +1662,7 @@ class ChatService:
 
             # Product-list queries: widen context with catalog-scoped products so
             # the model only lists real Blue Cross products (see answer() 3a0).
-            if ChatService._is_product_list_question(
-                request.message
-            ) or ChatService._is_product_list_question(standalone):
+            if ChatService._wants_product_catalog(request.message, standalone):
                 logger.info(
                     "product_list_query_detected",
                     message=request.message,
